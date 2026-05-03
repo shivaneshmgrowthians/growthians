@@ -125,9 +125,25 @@ export function AuthProvider({ children }) {
     setLoginTime(null)
   }
 
+  // Verify current password by trying to sign in with it
+  const verifyPassword = async (currentPassword) => {
+    if (!session?.user?.email) return { error: { message: 'No user session' } }
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: session.user.email,
+      password: currentPassword,
+    })
+    return { data, error }
+  }
+
+  // Update password (requires user to be signed in)
+  const updatePassword = async (newPassword) => {
+    const { data, error } = await supabase.auth.updateUser({ password: newPassword })
+    return { data, error }
+  }
+
   return (
     <AuthContext.Provider
-      value={{ session, profile, loading, loginTime, signIn, signUp, signOut, refreshProfile }}
+      value={{ session, profile, loading, loginTime, signIn, signUp, signOut, refreshProfile, verifyPassword, updatePassword }}
     >
       {children}
     </AuthContext.Provider>

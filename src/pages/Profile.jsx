@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Edit3, Mail, Briefcase, Save, X } from 'lucide-react'
+import { Edit3, Mail, Briefcase, Save, X, KeyRound, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
@@ -8,12 +8,17 @@ import { AVATAR_PRESETS, getAvatar } from '../lib/avatars'
 import { getNextCreditDate } from '../lib/leaveCredit'
 
 export default function Profile() {
-  const { profile, refreshProfile, loginTime } = useAuth()
+  const { profile, refreshProfile, loginTime, verifyPassword, updatePassword } = useAuth()
   const { showToast } = useToast()
   const [showEdit, setShowEdit] = useState(false)
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
+  const [showChangePassword, setShowChangePassword] = useState(false)
   const [editForm, setEditForm] = useState({ name: '', designation: '', works_on_sat: true })
+  const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' })
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false)
+  const [showNewPwd, setShowNewPwd] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
 
   if (!profile) return null
   const avatar = getAvatar(profile.avatar_id)
@@ -64,6 +69,48 @@ export default function Profile() {
     await refreshProfile()
     setShowAvatarPicker(false)
     showToast('Avatar updated')
+  }
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault()
+
+    if (passwordForm.new.length < 6) {
+      showToast('New password must be at least 6 characters', 'error')
+      return
+    }
+
+    if (passwordForm.new !== passwordForm.confirm) {
+      showToast('New passwords do not match', 'error')
+      return
+    }
+
+    if (passwordForm.current === passwordForm.new) {
+      showToast('New password must be different from current', 'error')
+      return
+    }
+
+    setChangingPassword(true)
+
+    // Step 1: Verify current password
+    const { error: verifyError } = await verifyPassword(passwordForm.current)
+    if (verifyError) {
+      showToast('Current password is incorrect', 'error')
+      setChangingPassword(false)
+      return
+    }
+
+    // Step 2: Update to new password
+    const { error: updateError } = await updatePassword(passwordForm.new)
+    if (updateError) {
+      showToast(updateError.message || 'Failed to update password', 'error')
+      setChangingPassword(false)
+      return
+    }
+
+    showToast('Password changed successfully')
+    setShowChangePassword(false)
+    setPasswordForm({ current: '', new: '', confirm: '' })
+    setChangingPassword(false)
   }
 
   // Calculate next credit date display
@@ -125,6 +172,13 @@ export default function Profile() {
                 <Edit3 className="w-4 h-4" strokeWidth={2} />
                 Edit Profile
               </Button>
+              <button
+                onClick={() => setShowChangePassword(true)}
+                className="mt-2 w-full text-xs text-white/60 hover:text-white py-2 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <KeyRound className="w-3.5 h-3.5" strokeWidth={1.8} />
+                Change Password
+              </button>
             </div>
           </div>
         </div>
@@ -269,6 +323,90 @@ export default function Profile() {
               </button>
             ))}
           </div>
+        </Modal>
+      )}
+
+      {/* Change Password Modal */}
+      {showChangePassword && (
+        <Modal title="Change Password" onClose={() => setShowChangePassword(false)}>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            {/* Current Password */}
+            <div>
+              <label className="block text-[10px] uppercase tracking-widest text-black/60 mb-1.5 font-semibold">
+                Current Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showCurrentPwd ? 'text' : 'password'}
+                  value={passwordForm.current}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })}
+                  className="w-full px-3 py-2.5 pr-10 border border-black/15 focus:border-black focus:outline-none transition-colors"
+                  placeholder="Enter current password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPwd(!showCurrentPwd)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-black/40 hover:text-black"
+                  tabIndex={-1}
+                >
+                  {showCurrentPwd ? <EyeOff className="w-4 h-4" strokeWidth={1.8} /> : <Eye className="w-4 h-4" strokeWidth={1.8} />}
+                </button>
+              </div>
+            </div>
+
+            {/* New Password */}
+            <div>
+              <label className="block text-[10px] uppercase tracking-widest text-black/60 mb-1.5 font-semibold">
+                New Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showNewPwd ? 'text' : 'password'}
+                  value={passwordForm.new}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, new: e.target.value })}
+                  className="w-full px-3 py-2.5 pr-10 border border-black/15 focus:border-black focus:outline-none transition-colors"
+                  placeholder="At least 6 characters"
+                  required
+                  minLength={6}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPwd(!showNewPwd)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-black/40 hover:text-black"
+                  tabIndex={-1}
+                >
+                  {showNewPwd ? <EyeOff className="w-4 h-4" strokeWidth={1.8} /> : <Eye className="w-4 h-4" strokeWidth={1.8} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Confirm New Password */}
+            <div>
+              <label className="block text-[10px] uppercase tracking-widest text-black/60 mb-1.5 font-semibold">
+                Confirm New Password
+              </label>
+              <input
+                type={showNewPwd ? 'text' : 'password'}
+                value={passwordForm.confirm}
+                onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })}
+                className="w-full px-3 py-2.5 border border-black/15 focus:border-black focus:outline-none transition-colors"
+                placeholder="Re-enter new password"
+                required
+                minLength={6}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={changingPassword}
+              className="w-full justify-center !py-3"
+            >
+              <KeyRound className="w-4 h-4" strokeWidth={2} />
+              {changingPassword ? 'Updating...' : 'Update Password'}
+            </Button>
+          </form>
         </Modal>
       )}
     </div>

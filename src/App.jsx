@@ -9,6 +9,7 @@ import Layout from './components/Layout'
 import AuthRoleSelector from './pages/AuthRoleSelector'
 import AuthCEO from './pages/AuthCEO'
 import AuthEmployee from './pages/AuthEmployee'
+import AuthSetPassword from './pages/AuthSetPassword'
 
 // Employee pages
 import EmployeeTodaySheet from './pages/EmployeeTodaySheet'
@@ -83,6 +84,7 @@ function AuthRoutes() {
       <Route path="/auth" element={<AuthRoleSelector />} />
       <Route path="/auth/ceo" element={<AuthCEO />} />
       <Route path="/auth/team" element={<AuthEmployee />} />
+      <Route path="/auth/set-password" element={<AuthSetPassword />} />
       <Route path="*" element={<Navigate to="/auth" replace />} />
     </Routes>
   )
@@ -90,12 +92,23 @@ function AuthRoutes() {
 
 function AppRouter() {
   const { profile, loading } = useAuth()
+  const path = window.location.pathname
 
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <Loader label="Starting Axis" />
       </div>
+    )
+  }
+
+  // Special route: set-password is accessible whether logged in or not
+  // (invited users get auto-logged in via the invite link, so they need to access this)
+  if (path === '/auth/set-password') {
+    return (
+      <Routes>
+        <Route path="/auth/set-password" element={<AuthSetPassword />} />
+      </Routes>
     )
   }
 
