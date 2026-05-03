@@ -93,12 +93,25 @@ function AuthRoutes() {
 function AppRouter() {
   const { profile, loading } = useAuth()
   const path = window.location.pathname
+  const hash = window.location.hash
 
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <Loader label="Starting Axis" />
       </div>
+    )
+  }
+
+  // Detect Supabase invite token in URL hash and redirect to set-password page
+  // Supabase puts auth tokens in the hash like: #access_token=...&type=invite
+  if (hash && hash.includes('type=invite')) {
+    // Replace the URL with set-password path while keeping the hash (which has the token)
+    window.history.replaceState(null, '', '/auth/set-password' + hash)
+    return (
+      <Routes>
+        <Route path="*" element={<AuthSetPassword />} />
+      </Routes>
     )
   }
 
