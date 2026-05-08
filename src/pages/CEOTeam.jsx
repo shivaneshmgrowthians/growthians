@@ -61,7 +61,7 @@ export default function CEOTeam() {
       const resData = await res.json()
       if (!res.ok) throw new Error(resData.msg || resData.message || resData.error_description || 'Invite failed')
 
-      const { error: dbError } = await supabase.from('users').insert({
+const { error: dbError } = await supabase.from('users').upsert({
         id: resData.id,
         email: form.email.trim(),
         name: form.name.trim(),
