@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react'
@@ -22,11 +21,10 @@ export default function AuthSetPassword() {
       const accessToken = params.get('access_token')
       const type = params.get('type')
 
-      // If invite token in URL hash, verify it
       if (accessToken && type === 'invite') {
         const { data, error } = await supabase.auth.verifyOtp({
           token_hash: accessToken,
-          type: 'invite',
+          type: 'email',
         })
         if (error) {
           showToast('Invalid or expired invitation link', 'error')
@@ -38,7 +36,6 @@ export default function AuthSetPassword() {
         return
       }
 
-      // No hash — check if already has session (e.g. page refresh)
       const { data, error } = await supabase.auth.getSession()
       if (error || !data.session) {
         showToast('Invalid or expired invitation link', 'error')
@@ -54,7 +51,6 @@ export default function AuthSetPassword() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-
     if (password.length < 6) {
       showToast('Password must be at least 6 characters', 'error')
       return
@@ -63,17 +59,13 @@ export default function AuthSetPassword() {
       showToast('Passwords do not match', 'error')
       return
     }
-
     setLoading(true)
-
     const { error } = await supabase.auth.updateUser({ password })
-
     if (error) {
       showToast(error.message || 'Failed to set password', 'error')
       setLoading(false)
       return
     }
-
     showToast('Password set! Welcome to Axis')
     setTimeout(() => navigate('/'), 1000)
   }
@@ -97,7 +89,6 @@ export default function AuthSetPassword() {
           transform: 'translate(15%, -15%)',
         }}
       />
-
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
           <div className="text-5xl font-bold tracking-tight mb-3">
@@ -181,4 +172,3 @@ export default function AuthSetPassword() {
     </div>
   )
 }
-```
