@@ -298,7 +298,7 @@ export default function EmployeeTodaySheet() {
                 className="bg-[#D9EAEA] border border-[#5BA8B8]/30 group"
               >
                 <div className="px-3 py-2 bg-black flex items-center justify-between">
-                  <span className="font-bold text-sm" style={{ color: '#C5F542' }}>
+                  <span className="font-bold text-sm" style={{ color: '#fdfcfc' }}>
                     {slot.time_slot}
                   </span>
                   {!submitted && todaySlots.length > 1 && (
@@ -337,9 +337,9 @@ export default function EmployeeTodaySheet() {
                   <tr
                     key={slot.slot_index}
                     className="border-b-2 last:border-b-0"
-                    style={{ borderColor: '#C5F542' }}
+                    style={{ borderColor: '#fbfbfb' }}
                   >
-                    <td className="bg-[#D9EAEA]">
+                    <td className="bg-white"
                       <textarea
                         disabled={submitted}
                         value={slot.days_agenda}
@@ -370,9 +370,9 @@ export default function EmployeeTodaySheet() {
                   <tr
                     key={slot.slot_index}
                     className="border-b-2 last:border-b-0"
-                    style={{ borderColor: '#C5F542' }}
+                    style={{ borderColor: '#fbfbfb' }}
                   >
-                    <td className="bg-[#FFFCB0]">
+                    <td className="bg-white"
                       <textarea
                         disabled={submitted}
                         value={slot.task_pending}
