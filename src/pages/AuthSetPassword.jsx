@@ -1,13 +1,10 @@
+
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 
-/**
- * Page where invited users set their password for the first time.
- * Reached via the invitation email link from Supabase.
- */
 export default function AuthSetPassword() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -19,8 +16,29 @@ export default function AuthSetPassword() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    // Check if user has an active session (came from invite link)
-    const checkSession = async () => {
+    const verifyInvite = async () => {
+      const hash = window.location.hash
+      const params = new URLSearchParams(hash.replace('#', ''))
+      const accessToken = params.get('access_token')
+      const type = params.get('type')
+
+      // If invite token in URL hash, verify it
+      if (accessToken && type === 'invite') {
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: accessToken,
+          type: 'invite',
+        })
+        if (error) {
+          showToast('Invalid or expired invitation link', 'error')
+          setTimeout(() => navigate('/auth'), 2000)
+          return
+        }
+        setUserEmail(data.user?.email || '')
+        setValidSession(true)
+        return
+      }
+
+      // No hash — check if already has session (e.g. page refresh)
       const { data, error } = await supabase.auth.getSession()
       if (error || !data.session) {
         showToast('Invalid or expired invitation link', 'error')
@@ -30,7 +48,8 @@ export default function AuthSetPassword() {
       setUserEmail(data.session.user.email)
       setValidSession(true)
     }
-    checkSession()
+
+    verifyInvite()
   }, [navigate, showToast])
 
   const handleSubmit = async (e) => {
@@ -40,7 +59,6 @@ export default function AuthSetPassword() {
       showToast('Password must be at least 6 characters', 'error')
       return
     }
-
     if (password !== confirmPassword) {
       showToast('Passwords do not match', 'error')
       return
@@ -56,7 +74,7 @@ export default function AuthSetPassword() {
       return
     }
 
-    showToast('Password set successfully! Welcome to Axis')
+    showToast('Password set! Welcome to Axis')
     setTimeout(() => navigate('/'), 1000)
   }
 
@@ -70,40 +88,29 @@ export default function AuthSetPassword() {
 
   return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Lime glow */}
       <div
         className="absolute top-0 right-0 pointer-events-none"
         style={{
           width: '700px',
           height: '700px',
-          background:
-            'radial-gradient(circle at top right, rgba(197, 245, 66, 0.18) 0%, rgba(197, 245, 66, 0.05) 35%, transparent 70%)',
+          background: 'radial-gradient(circle at top right, rgba(197, 245, 66, 0.18) 0%, rgba(197, 245, 66, 0.05) 35%, transparent 70%)',
           transform: 'translate(15%, -15%)',
         }}
       />
 
       <div className="w-full max-w-md relative z-10">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="text-5xl font-bold tracking-tight mb-3">
             <span style={{ color: '#C5F542' }}>A</span>xis
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#C5F542]/10 border border-[#C5F542]/30">
-            <KeyRound
-              className="w-3.5 h-3.5"
-              style={{ color: '#C5F542' }}
-              strokeWidth={2.5}
-            />
-            <span
-              className="text-xs uppercase tracking-widest font-semibold"
-              style={{ color: '#C5F542' }}
-            >
+            <KeyRound className="w-3.5 h-3.5" style={{ color: '#C5F542' }} strokeWidth={2.5} />
+            <span className="text-xs uppercase tracking-widest font-semibold" style={{ color: '#C5F542' }}>
               Set Your Password
             </span>
           </div>
         </div>
 
-        {/* Card */}
         <div className="bg-[#0a0a0a]/80 backdrop-blur-sm border border-white/10 p-8">
           <div className="mb-6">
             <h2 className="text-2xl font-semibold" style={{ color: '#C5F542' }}>
@@ -116,9 +123,7 @@ export default function AuthSetPassword() {
 
           {userEmail && (
             <div className="mb-4 p-3 bg-white/5 border border-white/10">
-              <div className="text-[10px] uppercase tracking-widest text-white/50 mb-1">
-                Account
-              </div>
+              <div className="text-[10px] uppercase tracking-widest text-white/50 mb-1">Account</div>
               <div className="text-sm font-medium">{userEmail}</div>
             </div>
           )}
@@ -176,3 +181,4 @@ export default function AuthSetPassword() {
     </div>
   )
 }
+```
