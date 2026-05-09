@@ -13,7 +13,7 @@ export default function EmployeeTodaySheet() {
   const { profile, loginTime } = useAuth()
   const { showToast } = useToast()
   const [userSlots, setUserSlots] = useState([])
-  const [todaySlots, setTodaySlots] = useState([]) // contains tasks_worked_on, days_agenda, task_pending
+  const [todaySlots, setTodaySlots] = useState([])
   const [dailyTaskId, setDailyTaskId] = useState(null)
   const [status, setStatus] = useState('draft')
   const [loading, setLoading] = useState(true)
@@ -25,26 +25,19 @@ export default function EmployeeTodaySheet() {
   const today = todayISO()
   const submitted = status === 'submitted'
 
-  // ============ LOAD ============
   useEffect(() => {
-    if (profile?.id) {
-      loadData()
-    }
+    if (profile?.id) loadData()
   }, [profile?.id])
 
   const loadData = async () => {
     setLoading(true)
-
-    // Load user's time slots
     const { data: slotsData } = await supabase
       .from('user_slots')
       .select('*')
       .eq('user_id', profile.id)
       .order('slot_index', { ascending: true })
-
     setUserSlots(slotsData || [])
 
-    // Load today's daily task (if exists) with its task_slots
     const { data: taskData } = await supabase
       .from('daily_tasks')
       .select('*, task_slots(*)')
@@ -57,7 +50,6 @@ export default function EmployeeTodaySheet() {
       setStatus(taskData.status)
     }
 
-    // Build slot view: merge user_slots template with stored task_slots data
     const merged = (slotsData || []).map((us) => {
       const found = taskData?.task_slots?.find((ts) => ts.slot_index === us.slot_index)
       return {
@@ -69,8 +61,6 @@ export default function EmployeeTodaySheet() {
       }
     })
     setTodaySlots(merged)
-
-    // Load weekly hours total
     await loadWeeklyHours()
     setLoading(false)
   }
@@ -83,37 +73,25 @@ export default function EmployeeTodaySheet() {
       .eq('user_id', profile.id)
       .eq('status', 'submitted')
       .gte('date', monday.toISOString().split('T')[0])
-
     const total = (data || []).reduce((sum, t) => sum + parseFloat(t.total_hours || 0), 0)
     setWeeklyHours(total.toFixed(1))
   }
 
-  // ============ AUTO-SAVE ============
   const autosave = useCallback(
     async (newSlots) => {
       if (!profile?.id || status === 'submitted') return
-
-      // Create daily_task if it doesn't exist
       let taskId = dailyTaskId
       if (!taskId) {
         const { data, error } = await supabase
           .from('daily_tasks')
-          .insert({
-            user_id: profile.id,
-            date: today,
-            status: 'draft',
-            login_time: loginTime,
-          })
+          .insert({ user_id: profile.id, date: today, status: 'draft', login_time: loginTime })
           .select()
           .single()
         if (error) return
         taskId = data.id
         setDailyTaskId(taskId)
       }
-
-      // Replace task_slots with new values (delete + insert)
       await supabase.from('task_slots').delete().eq('daily_task_id', taskId)
-
       const slotRows = newSlots.map((s) => ({
         daily_task_id: taskId,
         slot_index: s.slot_index,
@@ -122,7 +100,6 @@ export default function EmployeeTodaySheet() {
         days_agenda: s.days_agenda,
         task_pending: s.task_pending,
       }))
-
       await supabase.from('task_slots').insert(slotRows)
     },
     [profile?.id, dailyTaskId, status, today, loginTime],
@@ -133,12 +110,10 @@ export default function EmployeeTodaySheet() {
       s.slot_index === slotIndex ? { ...s, [field]: value } : s,
     )
     setTodaySlots(newSlots)
-
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => autosave(newSlots), 1200)
   }
 
-  // ============ SLOT MANAGEMENT ============
   const handleAddSlot = async (timeStr) => {
     const newIndex = userSlots.length > 0 ? Math.max(...userSlots.map((s) => s.slot_index)) + 1 : 0
     const { data, error } = await supabase
@@ -146,23 +121,9 @@ export default function EmployeeTodaySheet() {
       .insert({ user_id: profile.id, slot_index: newIndex, time_slot: timeStr })
       .select()
       .single()
-
-    if (error) {
-      showToast('Failed to add slot', 'error')
-      return
-    }
-
+    if (error) { showToast('Failed to add slot', 'error'); return }
     setUserSlots([...userSlots, data])
-    setTodaySlots([
-      ...todaySlots,
-      {
-        slot_index: newIndex,
-        time_slot: timeStr,
-        tasks_worked_on: '',
-        days_agenda: '',
-        task_pending: '',
-      },
-    ])
+    setTodaySlots([...todaySlots, { slot_index: newIndex, time_slot: timeStr, tasks_worked_on: '', days_agenda: '', task_pending: '' }])
     showToast('Slot added')
   }
 
@@ -171,71 +132,34 @@ export default function EmployeeTodaySheet() {
     await supabase.from('user_slots').delete().eq('id', slot.id)
     setUserSlots(userSlots.filter((s) => s.id !== slot.id))
     setTodaySlots(todaySlots.filter((s) => s.slot_index !== slot.slot_index))
-
-    // Also delete from task_slots if dailyTaskId exists
     if (dailyTaskId) {
-      await supabase
-        .from('task_slots')
-        .delete()
-        .eq('daily_task_id', dailyTaskId)
-        .eq('slot_index', slot.slot_index)
+      await supabase.from('task_slots').delete().eq('daily_task_id', dailyTaskId).eq('slot_index', slot.slot_index)
     }
   }
 
-  // ============ SUBMIT ============
   const handleSubmit = async () => {
     const hasContent = todaySlots.some((s) => s.tasks_worked_on?.trim())
-    if (!hasContent) {
-      showToast('Please fill at least one time slot', 'error')
-      return
-    }
+    if (!hasContent) { showToast('Please fill at least one time slot', 'error'); return }
     setSubmitting(true)
-
     await autosave(todaySlots)
-
     const totalHours = calculateHours(todaySlots)
     const logoffTime = getCurrentTime()
-
     const { error } = await supabase
       .from('daily_tasks')
-      .update({
-        status: 'submitted',
-        submitted_at: new Date().toISOString(),
-        logoff_time: logoffTime,
-        total_hours: totalHours,
-      })
+      .update({ status: 'submitted', submitted_at: new Date().toISOString(), logoff_time: logoffTime, total_hours: totalHours })
       .eq('id', dailyTaskId)
-
-    if (error) {
-      showToast('Failed to submit', 'error')
-      setSubmitting(false)
-      return
-    }
-
-    // Notify all CEOs
-    const { data: ceos } = await supabase
-      .from('users')
-      .select('id')
-      .eq('role', 'ceo')
-      .eq('active', true)
-
+    if (error) { showToast('Failed to submit', 'error'); setSubmitting(false); return }
+    const { data: ceos } = await supabase.from('users').select('id').eq('role', 'ceo').eq('active', true)
     if (ceos?.length) {
-      const notifs = ceos.map((ceo) => ({
-        recipient_id: ceo.id,
-        type: 'task_submitted',
-        message: `${profile.name} submitted daily tasks (${totalHours}h)`,
-        related_id: dailyTaskId,
-      }))
+      const notifs = ceos.map((ceo) => ({ recipient_id: ceo.id, type: 'task_submitted', message: `${profile.name} submitted daily tasks (${totalHours}h)`, related_id: dailyTaskId }))
       await supabase.from('notifications').insert(notifs)
     }
-
     setStatus('submitted')
     showToast(`Day submitted · ${totalHours} hours logged`)
     setSubmitting(false)
     loadWeeklyHours()
   }
 
-  // ============ RENDER ============
   if (loading) return <Loader label="Loading today's sheet" />
 
   const todayHours = calculateHours(todaySlots)
@@ -257,7 +181,6 @@ export default function EmployeeTodaySheet() {
         }
       />
 
-      {/* Stat row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatBlock icon={Clock} label="Login Time" value={loginTime || '—'} />
         <StatBlock icon={Timer} label="Today's Hours" value={`${todayHours} h`} accent />
@@ -275,7 +198,6 @@ export default function EmployeeTodaySheet() {
         </div>
       )}
 
-      {/* Three side-by-side tables */}
       <div className="grid grid-cols-3 gap-4">
         {/* Table 1: Tasks Worked On */}
         <div className="bg-white border-2 border-black overflow-hidden flex flex-col">
@@ -293,19 +215,12 @@ export default function EmployeeTodaySheet() {
           </div>
           <div className="overflow-y-auto flex-1 p-2 space-y-2">
             {todaySlots.map((slot) => (
-              <div
-                key={slot.slot_index}
-                className="bg-[#D9EAEA] border border-[#5BA8B8]/30 group"
-              >
+              <div key={slot.slot_index} className="bg-white border border-black/10 group">
                 <div className="px-3 py-2 bg-black flex items-center justify-between">
-                  <span className="font-bold text-sm" style={{ color: '#fdfcfc' }}>
-                    {slot.time_slot}
-                  </span>
+                  <span className="font-bold text-sm text-white">{slot.time_slot}</span>
                   {!submitted && todaySlots.length > 1 && (
                     <button
-                      onClick={() =>
-                        handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))
-                      }
+                      onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))}
                       className="opacity-0 group-hover:opacity-100 text-white/70 hover:text-white"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -317,7 +232,7 @@ export default function EmployeeTodaySheet() {
                   value={slot.tasks_worked_on}
                   onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 text-sm bg-transparent focus:bg-white focus:outline-none disabled:text-black resize-none"
+                  className="w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                   placeholder="What did you work on?"
                 />
               </div>
@@ -334,20 +249,14 @@ export default function EmployeeTodaySheet() {
             <table className="w-full border-collapse">
               <tbody>
                 {todaySlots.map((slot) => (
-                  <tr
-                    key={slot.slot_index}
-                    className="border-b-2 last:border-b-0"
-                    style={{ borderColor: '#fbfbfb' }}
-                  >
-                    <td className="bg-white"
+                  <tr key={slot.slot_index} className="border-b-2 last:border-b-0" style={{ borderColor: '#fbfbfb' }}>
+                    <td className="bg-white">
                       <textarea
                         disabled={submitted}
                         value={slot.days_agenda}
-                        onChange={(e) =>
-                          updateSlot(slot.slot_index, 'days_agenda', e.target.value)
-                        }
+                        onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)}
                         rows={3}
-                        className="w-full px-3 py-3 text-sm bg-transparent focus:bg-white focus:outline-none disabled:text-black resize-none"
+                        className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                         placeholder="—"
                       />
                     </td>
@@ -367,20 +276,14 @@ export default function EmployeeTodaySheet() {
             <table className="w-full border-collapse">
               <tbody>
                 {todaySlots.map((slot) => (
-                  <tr
-                    key={slot.slot_index}
-                    className="border-b-2 last:border-b-0"
-                    style={{ borderColor: '#fbfbfb' }}
-                  >
-                    <td className="bg-white"
+                  <tr key={slot.slot_index} className="border-b-2 last:border-b-0" style={{ borderColor: '#fbfbfb' }}>
+                    <td className="bg-white">
                       <textarea
                         disabled={submitted}
                         value={slot.task_pending}
-                        onChange={(e) =>
-                          updateSlot(slot.slot_index, 'task_pending', e.target.value)
-                        }
+                        onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)}
                         rows={3}
-                        className="w-full px-3 py-3 text-sm bg-transparent focus:bg-white focus:outline-none disabled:text-black resize-none"
+                        className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                         placeholder="—"
                       />
                     </td>
@@ -406,31 +309,13 @@ export default function EmployeeTodaySheet() {
 
 function StatBlock({ icon: Icon, label, value, subtitle, accent }) {
   return (
-    <div
-      className={`p-4 border ${
-        accent ? 'bg-black text-white border-black' : 'bg-white border-black/10'
-      }`}
-    >
+    <div className={`p-4 border ${accent ? 'bg-black text-white border-black' : 'bg-white border-black/10'}`}>
       <div className="flex items-center gap-2 mb-2">
-        <Icon
-          className={`w-4 h-4 ${accent ? '' : 'text-black/40'}`}
-          style={accent ? { color: '#C5F542' } : {}}
-          strokeWidth={1.8}
-        />
-        <span
-          className={`text-[10px] uppercase tracking-widest font-semibold ${
-            accent ? 'text-white/60' : 'text-black/50'
-          }`}
-        >
-          {label}
-        </span>
+        <Icon className={`w-4 h-4 ${accent ? '' : 'text-black/40'}`} style={accent ? { color: '#C5F542' } : {}} strokeWidth={1.8} />
+        <span className={`text-[10px] uppercase tracking-widest font-semibold ${accent ? 'text-white/60' : 'text-black/50'}`}>{label}</span>
       </div>
       <div className="text-2xl font-bold">{value}</div>
-      {subtitle && (
-        <div className={`text-[10px] mt-1 ${accent ? 'text-white/50' : 'text-black/50'}`}>
-          {subtitle}
-        </div>
-      )}
+      {subtitle && <div className={`text-[10px] mt-1 ${accent ? 'text-white/50' : 'text-black/50'}`}>{subtitle}</div>}
     </div>
   )
 }
