@@ -1,321 +1,344 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
-import {
-  Send, Settings, Trash2, CheckCircle2, Clock, Timer, TrendingUp, ListTodo,
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Plus, Calendar as CalendarIcon } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { todayISO, formatDateLong, calculateHours, getCurrentTime, getWeekMonday } from '../lib/helpers'
+import { formatDate, daysBetween } from '../lib/helpers'
+import { getNextCreditDate } from '../lib/leaveCredit'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
-import { PageHeader, Loader, Button } from '../components/ui'
-import SlotsManagerModal from '../components/SlotsManagerModal'
+import {
+  PageHeader, Modal, Field, Input, Textarea, StatusBadge, EmptyState, Loader, Button,
+} from '../components/ui'
 
-export default function EmployeeTodaySheet() {
-  const { profile, loginTime } = useAuth()
+export default function EmployeeLeave() {
+  const { profile, refreshProfile } = useAuth()
   const { showToast } = useToast()
-  const [userSlots, setUserSlots] = useState([])
-  const [todaySlots, setTodaySlots] = useState([])
-  const [dailyTaskId, setDailyTaskId] = useState(null)
-  const [status, setStatus] = useState('draft')
+  const [requests, setRequests] = useState([])
+  const [compDates, setCompDates] = useState([])
   const [loading, setLoading] = useState(true)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [compModal, setCompModal] = useState(null)
+  const [compForm, setCompForm] = useState({ comp_date: '', reason: '' })
+  const [form, setForm] = useState({ from_date: '', to_date: '', leave_type: 'full', reason: '' })
   const [submitting, setSubmitting] = useState(false)
-  const [showSlotsModal, setShowSlotsModal] = useState(false)
-  const [weeklyHours, setWeeklyHours] = useState('0.0')
-  const saveTimer = useRef(null)
-
-  const today = todayISO()
-  const submitted = status === 'submitted'
 
   useEffect(() => {
-    if (profile?.id) loadData()
+    if (profile?.id) loadRequests()
   }, [profile?.id])
 
-  const loadData = async () => {
+  const loadRequests = async () => {
     setLoading(true)
-    const { data: slotsData } = await supabase
-      .from('user_slots')
-      .select('*')
-      .eq('user_id', profile.id)
-      .order('slot_index', { ascending: true })
-    setUserSlots(slotsData || [])
-
-    const { data: taskData } = await supabase
-      .from('daily_tasks')
-      .select('*, task_slots(*)')
-      .eq('user_id', profile.id)
-      .eq('date', today)
-      .maybeSingle()
-
-    if (taskData) {
-      setDailyTaskId(taskData.id)
-      setStatus(taskData.status)
-    }
-
-    const merged = (slotsData || []).map((us) => {
-      const found = taskData?.task_slots?.find((ts) => ts.slot_index === us.slot_index)
-      return {
-        slot_index: us.slot_index,
-        time_slot: us.time_slot,
-        tasks_worked_on: found?.tasks_worked_on || '',
-        days_agenda: found?.days_agenda || '',
-        task_pending: found?.task_pending || '',
-      }
-    })
-    setTodaySlots(merged)
-    await loadWeeklyHours()
+    const [reqRes, compRes] = await Promise.all([
+      supabase.from('leave_requests').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }),
+      supabase.from('compensatory_dates').select('*').eq('user_id', profile.id).order('created_at', { ascending: false }),
+    ])
+    setRequests(reqRes.data || [])
+    setCompDates(compRes.data || [])
     setLoading(false)
   }
 
-  const loadWeeklyHours = async () => {
-    const monday = getWeekMonday()
-    const { data } = await supabase
-      .from('daily_tasks')
-      .select('total_hours')
-      .eq('user_id', profile.id)
-      .eq('status', 'submitted')
-      .gte('date', monday.toISOString().split('T')[0])
-    const total = (data || []).reduce((sum, t) => sum + parseFloat(t.total_hours || 0), 0)
-    setWeeklyHours(total.toFixed(1))
+  // Calculate how many leaves taken this month
+  const getLeavesThisMonth = () => {
+    const now = new Date()
+    const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    return requests
+      .filter(r => r.status === 'approved' && r.leave_type === 'full' && r.from_date?.startsWith(monthStr))
+      .reduce((sum, r) => sum + (r.days_requested || 0), 0)
   }
 
-  const autosave = useCallback(
-    async (newSlots) => {
-      if (!profile?.id || status === 'submitted') return
-      let taskId = dailyTaskId
-      if (!taskId) {
-        const { data, error } = await supabase
-          .from('daily_tasks')
-          .insert({ user_id: profile.id, date: today, status: 'draft', login_time: loginTime })
-          .select()
-          .single()
-        if (error) return
-        taskId = data.id
-        setDailyTaskId(taskId)
-      }
-      await supabase.from('task_slots').delete().eq('daily_task_id', taskId)
-      const slotRows = newSlots.map((s) => ({
-        daily_task_id: taskId,
-        slot_index: s.slot_index,
-        time_slot: s.time_slot,
-        tasks_worked_on: s.tasks_worked_on,
-        days_agenda: s.days_agenda,
-        task_pending: s.task_pending,
-      }))
-      await supabase.from('task_slots').insert(slotRows)
-    },
-    [profile?.id, dailyTaskId, status, today, loginTime],
-  )
-
-  const updateSlot = (slotIndex, field, value) => {
-    const newSlots = todaySlots.map((s) =>
-      s.slot_index === slotIndex ? { ...s, [field]: value } : s,
-    )
-    setTodaySlots(newSlots)
-    clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => autosave(newSlots), 1200)
+  // Check if comp is needed for a leave request
+  const needsComp = (req) => {
+    if (req.status !== 'approved' || req.leave_type !== 'full') return false
+    const balance = profile?.leave_balance || 0
+    const leavesThisMonth = getLeavesThisMonth()
+    // If they have carry forward (balance > 1 means they have more than just this month's credit)
+    const carryForward = Math.max(0, balance - 1)
+    return leavesThisMonth > 1 && carryForward === 0
   }
 
-  const handleAddSlot = async (timeStr) => {
-    const newIndex = userSlots.length > 0 ? Math.max(...userSlots.map((s) => s.slot_index)) + 1 : 0
+  const hasComp = (req) => compDates.some(c => c.leave_request_id === req.id)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!form.from_date || !form.to_date || !form.reason.trim()) {
+      showToast('Please fill all fields', 'error')
+      return
+    }
+
+    const days = daysBetween(form.from_date, form.to_date)
+    const isHalf = form.leave_type === 'half'
+    const deductDays = isHalf ? 0 : days
+    const lopDays = Math.max(0, deductDays - (profile?.leave_balance || 0))
+    const daysRequested = isHalf ? 0.5 : days
+
+    setSubmitting(true)
+
     const { data, error } = await supabase
-      .from('user_slots')
-      .insert({ user_id: profile.id, slot_index: newIndex, time_slot: timeStr })
+      .from('leave_requests')
+      .insert({
+        user_id: profile.id,
+        from_date: form.from_date,
+        to_date: form.to_date,
+        leave_type: form.leave_type,
+        reason: form.reason.trim(),
+        days_requested: daysRequested,
+        lop_days: lopDays,
+        status: 'pending',
+      })
       .select()
       .single()
-    if (error) { showToast('Failed to add slot', 'error'); return }
-    setUserSlots([...userSlots, data])
-    setTodaySlots([...todaySlots, { slot_index: newIndex, time_slot: timeStr, tasks_worked_on: '', days_agenda: '', task_pending: '' }])
-    showToast('Slot added')
-  }
 
-  const handleRemoveSlot = async (slot) => {
-    if (!slot.id) return
-    await supabase.from('user_slots').delete().eq('id', slot.id)
-    setUserSlots(userSlots.filter((s) => s.id !== slot.id))
-    setTodaySlots(todaySlots.filter((s) => s.slot_index !== slot.slot_index))
-    if (dailyTaskId) {
-      await supabase.from('task_slots').delete().eq('daily_task_id', dailyTaskId).eq('slot_index', slot.slot_index)
+    if (error) {
+      showToast(error.message || 'Failed to submit', 'error')
+      setSubmitting(false)
+      return
     }
-  }
 
-  const handleSubmit = async () => {
-    const hasContent = todaySlots.some((s) => s.tasks_worked_on?.trim())
-    if (!hasContent) { showToast('Please fill at least one time slot', 'error'); return }
-    setSubmitting(true)
-    await autosave(todaySlots)
-    const totalHours = calculateHours(todaySlots)
-    const logoffTime = getCurrentTime()
-    const { error } = await supabase
-      .from('daily_tasks')
-      .update({ status: 'submitted', submitted_at: new Date().toISOString(), logoff_time: logoffTime, total_hours: totalHours })
-      .eq('id', dailyTaskId)
-    if (error) { showToast('Failed to submit', 'error'); setSubmitting(false); return }
     const { data: ceos } = await supabase.from('users').select('id').eq('role', 'ceo').eq('active', true)
     if (ceos?.length) {
-      const notifs = ceos.map((ceo) => ({ recipient_id: ceo.id, type: 'task_submitted', message: `${profile.name} submitted daily tasks (${totalHours}h)`, related_id: dailyTaskId }))
+      const notifs = ceos.map((ceo) => ({
+        recipient_id: ceo.id,
+        type: 'leave_request',
+        message: `${profile.name} requested ${isHalf ? 'half-day' : days + '-day'} leave${lopDays > 0 ? ` (${lopDays} LOP)` : ''}`,
+        related_id: data.id,
+      }))
       await supabase.from('notifications').insert(notifs)
     }
-    setStatus('submitted')
-    showToast(`Day submitted · ${totalHours} hours logged`)
+
+    showToast(lopDays > 0 ? `Submitted · ${lopDays} day(s) will be Loss of Pay` : 'Leave request submitted')
+    setModalOpen(false)
+    setForm({ from_date: '', to_date: '', leave_type: 'full', reason: '' })
+    loadRequests()
     setSubmitting(false)
-    loadWeeklyHours()
   }
 
-  if (loading) return <Loader label="Loading today's sheet" />
+  const handleCompSubmit = async () => {
+    if (!compForm.comp_date) {
+      showToast('Please select a compensatory date', 'error')
+      return
+    }
+    if (compForm.comp_date === compModal.from_date || compForm.comp_date === compModal.to_date) {
+      showToast('Comp date cannot be the same as leave date', 'error')
+      return
+    }
 
-  const todayHours = calculateHours(todaySlots)
-  const filledCount = todaySlots.filter((s) => s.tasks_worked_on?.trim()).length
+    setSubmitting(true)
+    const { error } = await supabase.from('compensatory_dates').insert({
+      user_id: profile.id,
+      leave_request_id: compModal.id,
+      comp_date: compForm.comp_date,
+      reason: compForm.reason.trim() || null,
+      status: 'pending',
+    })
+
+    if (error) {
+      showToast('Failed to submit', 'error')
+      setSubmitting(false)
+      return
+    }
+
+    const { data: ceos } = await supabase.from('users').select('id').eq('role', 'ceo').eq('active', true)
+    if (ceos?.length) {
+      const notifs = ceos.map((ceo) => ({
+        recipient_id: ceo.id,
+        type: 'comp_request',
+        message: `${profile.name} submitted a compensatory date (${compForm.comp_date})`,
+      }))
+      await supabase.from('notifications').insert(notifs)
+    }
+
+    showToast('Compensatory date submitted!')
+    setCompModal(null)
+    setCompForm({ comp_date: '', reason: '' })
+    loadRequests()
+    setSubmitting(false)
+  }
+
+  const balance = profile?.leave_balance || 0
+  const nextCreditDate = getNextCreditDate(profile?.last_credited_month)
+  const nextCreditStr = nextCreditDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+  const isAtMax = balance >= 12
 
   return (
     <div>
       <PageHeader
-        eyebrow={formatDateLong(today)}
-        title="Today's Sheet"
-        subtitle="Fill in your work hour by hour. Submit at end of day."
+        eyebrow="Time Off"
+        title="Leave Requests"
         action={
-          !submitted && (
-            <Button variant="primary" onClick={handleSubmit} disabled={submitting}>
-              <Send className="w-4 h-4" strokeWidth={2} />
-              {submitting ? 'Submitting...' : 'Submit Day'}
-            </Button>
-          )
+          <Button variant="primary" onClick={() => setModalOpen(true)}>
+            <Plus className="w-4 h-4" strokeWidth={2} />
+            New Request
+          </Button>
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <StatBlock icon={Clock} label="Login Time" value={loginTime || '—'} />
-        <StatBlock icon={Timer} label="Today's Hours" value={`${todayHours} h`} accent />
-        <StatBlock icon={TrendingUp} label="Weekly Total" value={`${weeklyHours} h`} subtitle="resets Monday" />
-        <StatBlock icon={ListTodo} label="Slots Used" value={`${filledCount}/${todaySlots.length}`} />
-      </div>
-
-      {submitted && (
-        <div className="mb-6 bg-[#C5F542] p-4 flex items-center gap-3">
-          <CheckCircle2 className="w-5 h-5 text-black" strokeWidth={2} />
-          <div className="flex-1">
-            <div className="font-semibold text-black">Day submitted · {todayHours} hours logged</div>
-            <div className="text-xs text-black/70">CEO has been notified · Sheet is now locked</div>
+      {/* Balance card */}
+      <div className="bg-black text-white p-6 mb-6 relative overflow-hidden">
+        <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full opacity-10" style={{ background: '#C5F542' }} />
+        <div className="relative">
+          <div className="text-xs uppercase tracking-widest text-white/60 mb-2 font-semibold">Available Balance</div>
+          <div className="flex items-baseline gap-2">
+            <div className="text-6xl font-bold" style={{ color: '#C5F542' }}>{balance}</div>
+            <div className="text-2xl text-white/60">/ 12</div>
           </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-3 gap-4">
-        {/* Table 1: Tasks Worked On */}
-        <div className="bg-white border-2 border-black overflow-hidden flex flex-col">
-          <div className="bg-black text-white px-4 py-3 flex items-center justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-wider">Tasks Worked On</h3>
-            {!submitted && (
-              <button
-                onClick={() => setShowSlotsModal(true)}
-                className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2 py-1 transition-colors flex items-center gap-1"
-              >
-                <Settings className="w-3 h-3" strokeWidth={2} />
-                Slots
-              </button>
+          <div className="text-sm text-white/60 mt-2">Leaves credited monthly · Carries forward up to 12 · Half-day is free</div>
+          <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="w-4 h-4 text-white/60" strokeWidth={1.8} />
+              <span className="text-xs text-white/60">
+                {isAtMax ? <>Balance is at max — no new credits until you take leave</> : <>Next credit: <span className="font-semibold text-white">{nextCreditStr}</span></>}
+              </span>
+            </div>
+            {profile?.last_credited_month && (
+              <div className="text-[10px] uppercase tracking-widest text-white/40">
+                Last credited: {new Date(profile.last_credited_month + '-01').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+              </div>
             )}
           </div>
-          <div className="overflow-y-auto flex-1 p-2 space-y-2">
-            {todaySlots.map((slot) => (
-              <div key={slot.slot_index} className="bg-white border border-black/10 group">
-                <div className="px-3 py-2 bg-black flex items-center justify-between">
-                  <span className="font-bold text-sm text-white">{slot.time_slot}</span>
-                  {!submitted && todaySlots.length > 1 && (
-                    <button
-                      onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))}
-                      className="opacity-0 group-hover:opacity-100 text-white/70 hover:text-white"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+        </div>
+      </div>
+
+      {loading ? <Loader /> : requests.length === 0 ? (
+        <EmptyState message="No leave requests yet" icon={CalendarIcon} />
+      ) : (
+        <div className="space-y-3">
+          {requests.map((req) => {
+            const compNeeded = needsComp(req)
+            const compDone = hasComp(req)
+            const myComps = compDates.filter(c => c.leave_request_id === req.id)
+            return (
+              <div key={req.id} className="bg-white border border-black/10 p-5">
+                <div className="flex items-start justify-between flex-wrap gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 flex-wrap mb-2">
+                      <span className="text-lg font-semibold">
+                        {formatDate(req.from_date)}
+                        {req.to_date !== req.from_date ? ` → ${formatDate(req.to_date)}` : ''}
+                      </span>
+                      <StatusBadge status={req.status} />
+                      {req.lop_days > 0 && (
+                        <span className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1 bg-orange-100 text-orange-700">
+                          {req.lop_days} LOP
+                        </span>
+                      )}
+                      {compNeeded && !compDone && (
+                        <span className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1 bg-red-100 text-red-700 animate-pulse">
+                          Comp required
+                        </span>
+                      )}
+                      {compDone && (
+                        <span className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1 bg-[#C5F542] text-black">
+                          Comp submitted
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs uppercase tracking-widest text-black/50 font-semibold">
+                      {req.leave_type === 'full' ? `${req.days_requested} day${req.days_requested > 1 ? 's' : ''}` : 'Half day (free)'}
+                    </div>
+                    <p className="text-sm mt-3">{req.reason}</p>
+
+                    {/* Show submitted comp dates */}
+                    {myComps.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-black/10 space-y-1">
+                        <div className="text-[10px] uppercase tracking-widest font-semibold text-black/50 mb-1">Compensatory Dates</div>
+                        {myComps.map(c => (
+                          <div key={c.id} className="flex items-center gap-2 text-sm">
+                            <span className="font-semibold">{formatDate(c.comp_date)}</span>
+                            <StatusBadge status={c.status} />
+                            {c.reason && <span className="text-black/50">· {c.reason}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {req.ceo_comment && (
+                      <div className="mt-3 pt-3 border-t border-black/10">
+                        <div className="text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: '#888' }}>CEO Note</div>
+                        <p className="text-sm italic text-black/70">{req.ceo_comment}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Comp button */}
+                  {compNeeded && !compDone && (
+                    <Button variant="primary" onClick={() => { setCompModal(req); setCompForm({ comp_date: '', reason: '' }) }} className="!px-3 !py-2 text-xs flex-shrink-0">
+                      + Add Comp Date
+                    </Button>
                   )}
                 </div>
-                <textarea
-                  disabled={submitted}
-                  value={slot.tasks_worked_on}
-                  onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none"
-                  placeholder="What did you work on?"
-                />
               </div>
-            ))}
-          </div>
+            )
+          })}
         </div>
-
-        {/* Table 2: Day's Agenda */}
-        <div className="bg-white border-2 border-black overflow-hidden flex flex-col">
-          <div className="bg-black text-white px-4 py-3">
-            <h3 className="text-sm font-bold uppercase tracking-wider">Day's Agenda</h3>
-          </div>
-          <div className="overflow-y-auto flex-1">
-            <table className="w-full border-collapse">
-              <tbody>
-                {todaySlots.map((slot) => (
-                  <tr key={slot.slot_index} className="border-b-2 last:border-b-0" style={{ borderColor: '#fbfbfb' }}>
-                    <td className="bg-white">
-                      <textarea
-                        disabled={submitted}
-                        value={slot.days_agenda}
-                        onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)}
-                        rows={3}
-                        className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
-                        placeholder="—"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Table 3: Task Pending */}
-        <div className="bg-white border-2 border-black overflow-hidden flex flex-col">
-          <div className="bg-black text-white px-4 py-3">
-            <h3 className="text-sm font-bold uppercase tracking-wider">Task Pending</h3>
-          </div>
-          <div className="overflow-y-auto flex-1">
-            <table className="w-full border-collapse">
-              <tbody>
-                {todaySlots.map((slot) => (
-                  <tr key={slot.slot_index} className="border-b-2 last:border-b-0" style={{ borderColor: '#fbfbfb' }}>
-                    <td className="bg-white">
-                      <textarea
-                        disabled={submitted}
-                        value={slot.task_pending}
-                        onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)}
-                        rows={3}
-                        className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
-                        placeholder="—"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {showSlotsModal && (
-        <SlotsManagerModal
-          slots={userSlots}
-          onAddSlot={handleAddSlot}
-          onRemoveSlot={handleRemoveSlot}
-          onClose={() => setShowSlotsModal(false)}
-        />
       )}
-    </div>
-  )
-}
 
-function StatBlock({ icon: Icon, label, value, subtitle, accent }) {
-  return (
-    <div className={`p-4 border ${accent ? 'bg-black text-white border-black' : 'bg-white border-black/10'}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className={`w-4 h-4 ${accent ? '' : 'text-black/40'}`} style={accent ? { color: '#C5F542' } : {}} strokeWidth={1.8} />
-        <span className={`text-[10px] uppercase tracking-widest font-semibold ${accent ? 'text-white/60' : 'text-black/50'}`}>{label}</span>
-      </div>
-      <div className="text-2xl font-bold">{value}</div>
-      {subtitle && <div className={`text-[10px] mt-1 ${accent ? 'text-white/50' : 'text-black/50'}`}>{subtitle}</div>}
+      {/* Leave request modal */}
+      {modalOpen && (
+        <Modal title="Request Leave" onClose={() => setModalOpen(false)}>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="bg-[#C5F542]/10 border border-[#C5F542]/30 p-3 flex items-center gap-3">
+              <div className="text-2xl font-bold">{balance}</div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-black/60">Leaves Available</div>
+                <div className="text-xs text-black/60">If you exceed, days marked as Loss of Pay (LOP)</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="From" type="date" value={form.from_date} onChange={(e) => setForm({ ...form, from_date: e.target.value })} required />
+              <Input label="To" type="date" min={form.from_date} value={form.to_date} onChange={(e) => setForm({ ...form, to_date: e.target.value })} required />
+            </div>
+            {form.from_date && form.to_date && (
+              <div className="text-xs text-black/60 bg-black/5 p-2.5">
+                <strong>{daysBetween(form.from_date, form.to_date)} day{daysBetween(form.from_date, form.to_date) > 1 ? 's' : ''}</strong>
+                {form.leave_type === 'full' && daysBetween(form.from_date, form.to_date) > balance && (
+                  <span className="text-red-600 ml-2">⚠ {daysBetween(form.from_date, form.to_date) - balance} day(s) will be LOP</span>
+                )}
+                {form.leave_type === 'half' && <span className="text-[#666] ml-2">Half-day · does not deduct from balance</span>}
+              </div>
+            )}
+            <Field label="Type">
+              <div className="grid grid-cols-2 gap-2">
+                {[{ v: 'full', label: 'Full Day' }, { v: 'half', label: 'Half Day (Free)' }].map((t) => (
+                  <button key={t.v} type="button" onClick={() => setForm({ ...form, leave_type: t.v })}
+                    className={`py-2.5 text-sm transition-colors ${form.leave_type === t.v ? 'bg-black text-white' : 'bg-black/5 text-black/60 hover:bg-black/10'}`}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Textarea label="Reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} rows={3} placeholder="Brief reason..." required />
+            <Button type="submit" variant="primary" disabled={submitting} className="w-full justify-center !py-3">
+              {submitting ? 'Submitting...' : 'Submit Request'}
+            </Button>
+          </form>
+        </Modal>
+      )}
+
+      {/* Compensatory date modal */}
+      {compModal && (
+        <Modal title="Add Compensatory Date" onClose={() => setCompModal(null)}>
+          <div className="space-y-4">
+            <div className="bg-orange-50 border border-orange-200 p-3 text-sm text-orange-800">
+              You took more than 1 leave this month without carry forward balance. Please select a date you will compensate by working.
+            </div>
+            <Input
+              label="Compensatory Date"
+              type="date"
+              value={compForm.comp_date}
+              onChange={(e) => setCompForm({ ...compForm, comp_date: e.target.value })}
+            />
+            <Textarea
+              label="Note (Optional)"
+              value={compForm.reason}
+              onChange={(e) => setCompForm({ ...compForm, reason: e.target.value })}
+              rows={2}
+              placeholder="Any additional note..."
+            />
+            <Button variant="primary" onClick={handleCompSubmit} disabled={submitting} className="w-full justify-center !py-3">
+              {submitting ? 'Submitting...' : 'Submit Compensatory Date'}
+            </Button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
