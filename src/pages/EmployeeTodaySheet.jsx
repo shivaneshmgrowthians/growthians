@@ -198,12 +198,11 @@ export default function EmployeeTodaySheet() {
         </div>
       )}
 
-      {/* Three columns */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-0 border-2 border-black/20">
 
-        {/* Table 1: Tasks Worked On */}
-        <div className="bg-white border-2 border-black/20 overflow-hidden flex flex-col">
-          <div className="bg-black text-white px-4 py-3 flex items-center justify-between border-b-2 border-black/20">
+        {/* Column 1: Tasks Worked On */}
+        <div className="border-r-2 border-black/20 flex flex-col">
+          <div className="bg-black text-white px-4 py-3 flex items-center justify-between border-b border-black/20">
             <h3 className="text-sm font-bold uppercase tracking-wider">Tasks Worked On</h3>
             {!submitted && (
               <button
@@ -215,17 +214,17 @@ export default function EmployeeTodaySheet() {
               </button>
             )}
           </div>
-          <div className="overflow-y-auto flex-1 divide-y divide-black/10">
+          <div className="flex-1 divide-y divide-black/10">
             {todaySlots.map((slot) => (
               <div key={slot.slot_index} className="group">
                 <div className="px-3 py-2 bg-black/5 border-b border-black/10 flex items-center justify-between">
-                  <span className="font-bold text-xs uppercase tracking-wider text-black/70">
+                  <span className="font-bold text-xs uppercase tracking-wider text-black/60">
                     {slot.time_slot}
                   </span>
                   {!submitted && todaySlots.length > 1 && (
                     <button
                       onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))}
-                      className="opacity-0 group-hover:opacity-100 text-black/40 hover:text-black"
+                      className="opacity-0 group-hover:opacity-100 text-black/30 hover:text-black transition-opacity"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -235,8 +234,8 @@ export default function EmployeeTodaySheet() {
                   disabled={submitted}
                   value={slot.tasks_worked_on}
                   onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 text-sm bg-white focus:bg-white/80 focus:outline-none disabled:text-black resize-none"
+                  rows={4}
+                  className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                   placeholder="What did you work on?"
                 />
               </div>
@@ -244,25 +243,20 @@ export default function EmployeeTodaySheet() {
           </div>
         </div>
 
-        {/* Table 2: Day's Agenda */}
-        <div className="bg-white border-2 border-black/20 overflow-hidden flex flex-col">
-          <div className="bg-black text-white px-4 py-3 border-b-2 border-black/20">
+        {/* Column 2: Day's Agenda */}
+        <div className="border-r-2 border-black/20 flex flex-col">
+          <div className="bg-black text-white px-4 py-3 border-b border-black/20">
             <h3 className="text-sm font-bold uppercase tracking-wider">Day's Agenda</h3>
           </div>
-          <div className="overflow-y-auto flex-1 divide-y divide-black/10">
+          <div className="flex-1 divide-y divide-black/10">
             {todaySlots.map((slot) => (
               <div key={slot.slot_index}>
-                <div className="px-3 py-2 bg-black/5 border-b border-black/10">
-                  <span className="font-bold text-xs uppercase tracking-wider text-black/70">
-                    {slot.time_slot}
-                  </span>
-                </div>
                 <textarea
                   disabled={submitted}
                   value={slot.days_agenda}
                   onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none"
+                  rows={5}
+                  className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                   placeholder="—"
                 />
               </div>
@@ -270,25 +264,20 @@ export default function EmployeeTodaySheet() {
           </div>
         </div>
 
-        {/* Table 3: Task Pending */}
-        <div className="bg-white border-2 border-black/20 overflow-hidden flex flex-col">
-          <div className="bg-black text-white px-4 py-3 border-b-2 border-black/20">
+        {/* Column 3: Task Pending */}
+        <div className="flex flex-col">
+          <div className="bg-black text-white px-4 py-3 border-b border-black/20">
             <h3 className="text-sm font-bold uppercase tracking-wider">Task Pending</h3>
           </div>
-          <div className="overflow-y-auto flex-1 divide-y divide-black/10">
+          <div className="flex-1 divide-y divide-black/10">
             {todaySlots.map((slot) => (
               <div key={slot.slot_index}>
-                <div className="px-3 py-2 bg-black/5 border-b border-black/10">
-                  <span className="font-bold text-xs uppercase tracking-wider text-black/70">
-                    {slot.time_slot}
-                  </span>
-                </div>
                 <textarea
                   disabled={submitted}
                   value={slot.task_pending}
                   onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none"
+                  rows={5}
+                  className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                   placeholder="—"
                 />
               </div>
