@@ -198,11 +198,11 @@ export default function EmployeeTodaySheet() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-0 border-2 border-black/20">
+      <div className="grid grid-cols-3 border-2 border-black/20">
 
         {/* Column 1: Tasks Worked On */}
         <div className="border-r-2 border-black/20 flex flex-col">
-          <div className="bg-black text-white px-4 py-3 flex items-center justify-between border-b border-black/20">
+          <div className="bg-black text-white px-4 py-3 flex items-center justify-between">
             <h3 className="text-sm font-bold uppercase tracking-wider">Tasks Worked On</h3>
             {!submitted && (
               <button
@@ -234,7 +234,7 @@ export default function EmployeeTodaySheet() {
                   disabled={submitted}
                   value={slot.tasks_worked_on}
                   onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)}
-                  rows={4}
+                  rows={3}
                   className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                   placeholder="What did you work on?"
                 />
@@ -245,17 +245,20 @@ export default function EmployeeTodaySheet() {
 
         {/* Column 2: Day's Agenda */}
         <div className="border-r-2 border-black/20 flex flex-col">
-          <div className="bg-black text-white px-4 py-3 border-b border-black/20">
+          <div className="bg-black text-white px-4 py-3">
             <h3 className="text-sm font-bold uppercase tracking-wider">Day's Agenda</h3>
           </div>
           <div className="flex-1 divide-y divide-black/10">
             {todaySlots.map((slot) => (
               <div key={slot.slot_index}>
+                <div className="px-3 py-2 bg-black/5 border-b border-black/10">
+                  <span className="text-xs invisible">placeholder</span>
+                </div>
                 <textarea
                   disabled={submitted}
                   value={slot.days_agenda}
                   onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)}
-                  rows={5}
+                  rows={3}
                   className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                   placeholder="—"
                 />
@@ -266,17 +269,20 @@ export default function EmployeeTodaySheet() {
 
         {/* Column 3: Task Pending */}
         <div className="flex flex-col">
-          <div className="bg-black text-white px-4 py-3 border-b border-black/20">
+          <div className="bg-black text-white px-4 py-3">
             <h3 className="text-sm font-bold uppercase tracking-wider">Task Pending</h3>
           </div>
           <div className="flex-1 divide-y divide-black/10">
             {todaySlots.map((slot) => (
               <div key={slot.slot_index}>
+                <div className="px-3 py-2 bg-black/5 border-b border-black/10">
+                  <span className="text-xs invisible">placeholder</span>
+                </div>
                 <textarea
                   disabled={submitted}
                   value={slot.task_pending}
                   onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)}
-                  rows={5}
+                  rows={3}
                   className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none"
                   placeholder="—"
                 />
