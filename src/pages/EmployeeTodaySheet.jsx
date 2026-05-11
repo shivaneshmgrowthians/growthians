@@ -198,11 +198,10 @@ export default function EmployeeTodaySheet() {
         </div>
       )}
 
-      {/* Table layout for perfect row alignment */}
       <div className="border-2 border-black/20 overflow-hidden">
-        {/* Header row */}
-        <div className="grid grid-cols-3 bg-black text-white">
-          <div className="px-4 py-3 border-r border-white/10 flex items-center justify-between">
+        {/* Header */}
+        <div className="grid grid-cols-3 bg-black text-white divide-x divide-white/10">
+          <div className="px-4 py-3 flex items-center justify-between">
             <h3 className="text-sm font-bold uppercase tracking-wider">Tasks Worked On</h3>
             {!submitted && (
               <button
@@ -214,7 +213,7 @@ export default function EmployeeTodaySheet() {
               </button>
             )}
           </div>
-          <div className="px-4 py-3 border-r border-white/10">
+          <div className="px-4 py-3">
             <h3 className="text-sm font-bold uppercase tracking-wider">Day's Agenda</h3>
           </div>
           <div className="px-4 py-3">
@@ -222,14 +221,17 @@ export default function EmployeeTodaySheet() {
           </div>
         </div>
 
-        {/* Data rows — each slot is one full-width row with 3 cells */}
+        {/* Rows */}
         {todaySlots.map((slot) => (
-          <div key={slot.slot_index} className="grid grid-cols-3 border-t border-black/10 group">
-
-            {/* Cell 1: Tasks Worked On */}
-            <div className="border-r border-black/10 flex flex-col">
-              <div className="px-3 py-2 bg-black/5 border-b border-black/10 flex items-center justify-between">
-                <span className="font-bold text-xs uppercase tracking-wider text-black/60">
+          <div
+            key={slot.slot_index}
+            className="grid grid-cols-3 border-t border-black/10 divide-x divide-black/10 group"
+            style={{ gridAutoRows: '1fr' }}
+          >
+            {/* Cell 1 */}
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between px-3 py-1.5 bg-black/5 border-b border-black/10">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-black/50">
                   {slot.time_slot}
                 </span>
                 {!submitted && todaySlots.length > 1 && (
@@ -245,39 +247,41 @@ export default function EmployeeTodaySheet() {
                 disabled={submitted}
                 value={slot.tasks_worked_on}
                 onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)}
-                className="flex-1 w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none min-h-[100px]"
+                className="flex-1 w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none"
+                style={{ minHeight: '90px' }}
                 placeholder="What did you work on?"
               />
             </div>
 
-            {/* Cell 2: Day's Agenda */}
-            <div className="border-r border-black/10 flex flex-col">
-              <div className="px-3 py-2 bg-black/5 border-b border-black/10">
-                <span className="text-xs invisible">x</span>
+            {/* Cell 2 */}
+            <div className="flex flex-col">
+              <div className="px-3 py-1.5 bg-black/5 border-b border-black/10">
+                <span className="text-[10px] invisible">x</span>
               </div>
               <textarea
                 disabled={submitted}
                 value={slot.days_agenda}
                 onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)}
-                className="flex-1 w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none min-h-[100px]"
+                className="flex-1 w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none"
+                style={{ minHeight: '90px' }}
                 placeholder="—"
               />
             </div>
 
-            {/* Cell 3: Task Pending */}
+            {/* Cell 3 */}
             <div className="flex flex-col">
-              <div className="px-3 py-2 bg-black/5 border-b border-black/10">
-                <span className="text-xs invisible">x</span>
+              <div className="px-3 py-1.5 bg-black/5 border-b border-black/10">
+                <span className="text-[10px] invisible">x</span>
               </div>
               <textarea
                 disabled={submitted}
                 value={slot.task_pending}
                 onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)}
-                className="flex-1 w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none min-h-[100px]"
+                className="flex-1 w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none"
+                style={{ minHeight: '90px' }}
                 placeholder="—"
               />
             </div>
-
           </div>
         ))}
       </div>
