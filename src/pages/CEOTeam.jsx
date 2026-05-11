@@ -13,7 +13,12 @@ export default function CEOTeam() {
   const [loading, setLoading] = useState(true)
   const [showInvite, setShowInvite] = useState(false)
   const [inviting, setInviting] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', designation: '' })
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    designation: '',
+    leave_start_month: '2026-05',
+  })
 
   useEffect(() => {
     if (profile?.id) loadTeam()
@@ -61,20 +66,22 @@ export default function CEOTeam() {
       const resData = await res.json()
       if (!res.ok) throw new Error(resData.msg || resData.message || resData.error_description || 'Invite failed')
 
-const { error: dbError } = await supabase.from('users').upsert({
+      const { error: dbError } = await supabase.from('users').upsert({
         id: resData.id,
         email: form.email.trim(),
         name: form.name.trim(),
         designation: form.designation.trim(),
         role: 'employee',
         active: true,
-        leave_balance: 12,
+        leave_balance: 0,
+        leave_start_month: form.leave_start_month,
+        last_credited_month: null,
       })
 
       if (dbError) throw dbError
 
-      showToast('Invite sent to ' + form.email.trim() + '!', 'success')
-      setForm({ name: '', email: '', designation: '' })
+      showToast('Invite sent to ' + form.email.trim() + '!')
+      setForm({ name: '', email: '', designation: '', leave_start_month: '2026-05' })
       setShowInvite(false)
       loadTeam()
     } catch (err) {
@@ -127,6 +134,7 @@ const { error: dbError } = await supabase.from('users').upsert({
                 <th className="text-left text-[10px] uppercase tracking-widest font-semibold px-4 py-3">Designation</th>
                 <th className="text-left text-[10px] uppercase tracking-widest font-semibold px-4 py-3">Email</th>
                 <th className="text-left text-[10px] uppercase tracking-widest font-semibold px-4 py-3">Leaves</th>
+                <th className="text-left text-[10px] uppercase tracking-widest font-semibold px-4 py-3">Leave Start</th>
                 <th className="text-left text-[10px] uppercase tracking-widest font-semibold px-4 py-3">Status</th>
                 <th className="w-12"></th>
               </tr>
@@ -149,7 +157,14 @@ const { error: dbError } = await supabase.from('users').upsert({
                     </td>
                     <td className="px-4 py-3 text-sm">{u.designation}</td>
                     <td className="px-4 py-3 text-sm text-black/60">{u.email}</td>
-                    <td className="px-4 py-3 text-sm">{u.leave_balance} / 12</td>
+                    <td className="px-4 py-3 text-sm">
+                      {u.role === 'ceo' ? '—' : `${u.leave_balance} / 12`}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-black/60">
+                      {u.role === 'ceo' ? '—' : (u.leave_start_month
+                        ? new Date(u.leave_start_month + '-01').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+                        : '—')}
+                    </td>
                     <td className="px-4 py-3">
                       {u.active ? (
                         <span className="text-[10px] uppercase tracking-widest font-semibold bg-[#C5F542] text-black px-2 py-1">Active</span>
@@ -204,6 +219,23 @@ const { error: dbError } = await supabase.from('users').upsert({
                 value={form.designation}
                 onChange={e => setForm(f => ({ ...f, designation: e.target.value }))}
               />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-widest font-semibold mb-1">Leave Start Month</label>
+              <select
+                className="w-full border border-black/20 px-3 py-2 text-sm focus:outline-none focus:border-black"
+                value={form.leave_start_month}
+                onChange={e => setForm(f => ({ ...f, leave_start_month: e.target.value }))}
+              >
+                <option value="2026-05">May 2026</option>
+                <option value="2026-06">June 2026</option>
+                <option value="2026-07">July 2026</option>
+                <option value="2026-08">August 2026</option>
+                <option value="2026-09">September 2026</option>
+                <option value="2026-10">October 2026</option>
+                <option value="2026-11">November 2026</option>
+                <option value="2026-12">December 2026</option>
+              </select>
             </div>
             <div className="flex gap-2 pt-2">
               <Button variant="primary" onClick={handleInvite} disabled={inviting} className="flex-1">
