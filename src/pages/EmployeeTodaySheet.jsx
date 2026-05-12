@@ -28,9 +28,10 @@ export default function EmployeeTodaySheet() {
   const [teamToday, setTeamToday] = useState([])
   const [spectateUser, setSpectateUser] = useState(null)
   const [spectateSlots, setSpectateSlots] = useState([])
+  const [spectateTask, setSpectateTask] = useState(null)
   const [spectateLoading, setSpectateLoading] = useState(false)
-  const saveTimer = useRef(null)
   const autoSaveInterval = useRef(null)
+  const spectateTimer = useRef(null)
 
   const today = todayISO()
   const submitted = status === 'submitted'
@@ -52,6 +53,11 @@ export default function EmployeeTodaySheet() {
     }, 5000)
     return () => clearInterval(autoSaveInterval.current)
   }, [profile?.id, submitted, todaySlots, dailyTaskId])
+
+  // Cleanup spectate timer on unmount
+  useEffect(() => {
+    return () => { if (spectateTimer.current) clearInterval(spectateTimer.current) }
+  }, [])
 
   const loadData = async () => {
     setLoading(true)
@@ -88,7 +94,6 @@ export default function EmployeeTodaySheet() {
     })
     setTodaySlots(merged)
 
-    // Freeze login time on first load if no task exists yet
     if (!taskData && loginTime) {
       const { data: newTask } = await supabase
         .from('daily_tasks')
@@ -127,17 +132,31 @@ export default function EmployeeTodaySheet() {
     setTeamToday(merged)
   }
 
-  const loadSpectateView = async (userId) => {
-    setSpectateLoading(true)
+  const refreshSpectate = async (userId) => {
     const { data } = await supabase
       .from('daily_tasks')
       .select('*, task_slots(*)')
       .eq('user_id', userId)
       .eq('date', today)
       .maybeSingle()
-
+    setSpectateTask(data)
     setSpectateSlots(data?.task_slots || [])
+  }
+
+  const openSpectate = async (user) => {
+    setSpectateUser(user)
+    setSpectateLoading(true)
+    await refreshSpectate(user.id)
     setSpectateLoading(false)
+    if (spectateTimer.current) clearInterval(spectateTimer.current)
+    spectateTimer.current = setInterval(() => refreshSpectate(user.id), 5000)
+  }
+
+  const closeSpectate = () => {
+    if (spectateTimer.current) clearInterval(spectateTimer.current)
+    setSpectateUser(null)
+    setSpectateSlots([])
+    setSpectateTask(null)
   }
 
   const loadWeeklyHours = async () => {
@@ -297,7 +316,6 @@ export default function EmployeeTodaySheet() {
         </div>
       )}
 
-      {/* Task Sheet */}
       <div className="border-2 border-black/20 overflow-hidden mb-6">
         <div className="grid grid-cols-3 bg-black text-white divide-x divide-white/10">
           <div className="px-4 py-3 flex items-center justify-between">
@@ -373,7 +391,7 @@ export default function EmployeeTodaySheet() {
         ))}
       </div>
 
-      {/* Team Today - Spectate */}
+      {/* Team Today - Live Spectate */}
       {teamToday.length > 0 && (
         <div className="mt-6">
           <h3 className="text-sm uppercase tracking-widest font-semibold text-black/50 mb-3 flex items-center gap-2">
@@ -386,7 +404,7 @@ export default function EmployeeTodaySheet() {
               return (
                 <button
                   key={u.id}
-                  onClick={() => { setSpectateUser(u); loadSpectateView(u.id) }}
+                  onClick={() => openSpectate(u)}
                   className="bg-white border border-black/10 p-4 text-left hover:border-black/30 transition-colors"
                 >
                   <div className="flex items-center gap-3 mb-2">
@@ -417,14 +435,29 @@ export default function EmployeeTodaySheet() {
         </div>
       )}
 
-      {/* Spectate Modal */}
+      {/* Live Spectate Modal */}
       {spectateUser && (
-        <Modal title={`${spectateUser.name}'s Today Sheet`} onClose={() => { setSpectateUser(null); setSpectateSlots([]) }}>
+        <Modal title={`${spectateUser.name}'s Today Sheet (Live)`} onClose={closeSpectate}>
           {spectateLoading ? <Loader /> : (
             spectateSlots.length === 0 ? (
               <div className="text-center text-black/50 py-8 text-sm">No tasks filled yet today</div>
             ) : (
-              <DailyTaskGrid slots={spectateSlots} date={today} />
+              <div>
+                {spectateTask && (
+                  <div className="flex items-center gap-4 mb-3 text-xs text-black/50 flex-wrap">
+                    {spectateTask.login_time && <span>Login: <strong className="text-black">{spectateTask.login_time}</strong></span>}
+                    {spectateTask.logoff_time && <span>Logoff: <strong className="text-black">{spectateTask.logoff_time}</strong></span>}
+                    {spectateTask.total_hours && <span>Hours: <strong className="text-black">{spectateTask.total_hours}h</strong></span>}
+                    <span className={`uppercase tracking-widest font-semibold px-2 py-0.5 ${
+                      spectateTask.status === 'submitted' ? 'bg-[#C5F542] text-black' : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {spectateTask.status}
+                    </span>
+                    <span className="text-[10px] text-black/30 animate-pulse">● Live</span>
+                  </div>
+                )}
+                <DailyTaskGrid slots={spectateSlots} date={today} />
+              </div>
             )
           )}
         </Modal>
