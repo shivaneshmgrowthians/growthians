@@ -292,9 +292,8 @@ export default function CalendarPage() {
                 <div className="flex items-start justify-between">
                   <div className={`text-sm font-semibold ${isOff ? 'text-black/40' : ''}`}>{d}</div>
                   {hasWork && !holiday && (
-                    <div className="w-2 h-2 rounded-full bg-[#C5F542]" title="Tasks submitted" />
-                  )}
-                </div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#C5F542] flex-shrink-0" title="Tasks submitted" />
+)}
 
                 <div className="mt-1 space-y-0.5">
                   {holiday && (
