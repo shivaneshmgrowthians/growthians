@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronRight, Plus, X } from 'lucide-react'
+import { ChevronRight, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
@@ -19,11 +19,10 @@ export default function CalendarPage() {
   const [holidayForm, setHolidayForm] = useState({ date: '', name: '' })
   const [hoveredDay, setHoveredDay] = useState(null)
   const [loading, setLoading] = useState(true)
-
-  // Work diary state
   const [selectedDate, setSelectedDate] = useState(null)
   const [diaryTasks, setDiaryTasks] = useState([])
   const [diaryLoading, setDiaryLoading] = useState(false)
+  const [diaryTaskDates, setDiaryTaskDates] = useState(new Set())
 
   const isCEO = profile?.role === 'ceo'
 
@@ -33,7 +32,6 @@ export default function CalendarPage() {
 
   const loadData = async () => {
     setLoading(true)
-
     const { data: holidaysData } = await supabase
       .from('holidays').select('*').order('date', { ascending: true })
     setHolidays(holidaysData || [])
@@ -90,9 +88,7 @@ export default function CalendarPage() {
     })
   const isSaturday = (d) => new Date(year, month, d).getDay() === 6
   const isSunday = (d) => new Date(year, month, d).getDay() === 0
-
-  const getCompForDay = (d) =>
-    compDates.filter((c) => c.comp_date === dateStr(d))
+  const getCompForDay = (d) => compDates.filter((c) => c.comp_date === dateStr(d))
 
   const getMyOverride = (d) => {
     if (isCEO) return null
@@ -104,15 +100,7 @@ export default function CalendarPage() {
     return satOverrides.filter((o) => o.sat_date === dateStr(d))
   }
 
-  // Check if any tasks were submitted on this date
-  const hasSubmittedTasks = (d) => {
-    const ds = dateStr(d)
-    return diaryTaskDates.has(ds)
-  }
-
   // Load submitted task dates for current month
-  const [diaryTaskDates, setDiaryTaskDates] = useState(new Set())
-
   useEffect(() => {
     if (!profile?.id) return
     const loadMonthTasks = async () => {
@@ -124,8 +112,7 @@ export default function CalendarPage() {
         .eq('status', 'submitted')
         .gte('date', startDate)
         .lte('date', endDate)
-      const dates = new Set((data || []).map(t => t.date))
-      setDiaryTaskDates(dates)
+      setDiaryTaskDates(new Set((data || []).map(t => t.date)))
     }
     loadMonthTasks()
   }, [profile?.id, year, month, daysInMonth])
@@ -134,7 +121,6 @@ export default function CalendarPage() {
     if (isCEO) return
     const ds = dateStr(d)
     const existing = satOverrides.find((o) => o.user_id === profile.id && o.sat_date === ds)
-
     if (existing) {
       if (existing.status === 'off') {
         await supabase.from('sat_overrides').update({ status: 'working' }).eq('id', existing.id)
@@ -147,13 +133,11 @@ export default function CalendarPage() {
       await supabase.from('sat_overrides').insert({ user_id: profile.id, sat_date: ds, status: 'off' })
       showToast('Saturday marked as off')
     }
-
     if (!isCEO) {
       const { data: ceos } = await supabase.from('users').select('id').eq('role', 'ceo').eq('active', true)
       if (ceos?.length) {
         const notifs = ceos.map((ceo) => ({
-          recipient_id: ceo.id,
-          type: 'sat_override',
+          recipient_id: ceo.id, type: 'sat_override',
           message: `${profile.name} updated their Saturday status (${new Date(ds).toLocaleDateString()})`,
         }))
         await supabase.from('notifications').insert(notifs)
@@ -172,7 +156,6 @@ export default function CalendarPage() {
     loadData()
   }
 
-  // Open work diary for a specific date
   const openDiary = async (d) => {
     const ds = dateStr(d)
     setSelectedDate(ds)
@@ -191,9 +174,7 @@ export default function CalendarPage() {
     const sat = isSaturday(d)
     const holiday = isHoliday(d)
     const leave = isOnLeave(d)[0]
-    const clickableSat = !isCEO && sat && !holiday && !leave
-
-    if (clickableSat) {
+    if (!isCEO && sat && !holiday && !leave) {
       toggleSatOverride(d)
     } else {
       openDiary(d)
@@ -220,7 +201,7 @@ export default function CalendarPage() {
         <div className="bg-white border border-black/10 p-4 mb-6 flex items-center justify-between flex-wrap gap-3">
           <div>
             <div className="text-sm font-semibold">Default: Saturday is a working day</div>
-            <div className="text-xs text-black/60">Click individual Saturdays in the calendar below to override per-Saturday</div>
+            <div className="text-xs text-black/60">Click individual Saturdays to override</div>
           </div>
           <button
             onClick={async () => {
@@ -249,144 +230,162 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-7 border-b border-black/10">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-            <div key={d} className="text-center text-[10px] uppercase tracking-widest font-semibold text-black/50 py-3">{d}</div>
-          ))}
-        </div>
+        {/* Day headers */}
+        <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+          <thead>
+            <tr className="border-b border-black/10">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                <th key={d} className="text-center text-[10px] uppercase tracking-widest font-semibold text-black/50 py-3">{d}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(() => {
+              const rows = []
+              let cells = []
+              // Empty cells before first day
+              for (let i = 0; i < firstDay; i++) {
+                cells.push(
+                  <td key={`e-${i}`} className="border border-black/5 h-24 align-top p-1.5 bg-white" />
+                )
+              }
+              for (let d = 1; d <= daysInMonth; d++) {
+                const holiday = isHoliday(d)
+                const leaveList = isOnLeave(d)
+                const leave = leaveList[0]
+                const sat = isSaturday(d)
+                const sun = isSunday(d)
+                const compList = getCompForDay(d)
+                const myOverride = sat ? getMyOverride(d) : null
+                const ceoOverrides = sat ? getOverridesForSat(d) : []
+                const hasWork = diaryTaskDates.has(dateStr(d))
 
-        <div className="grid grid-cols-7">
-          {Array.from({ length: firstDay }).map((_, i) => (
-            <div key={`e-${i}`} className="min-h-[80px] border-r border-b border-black/5 last:border-r-0" />
-          ))}
-          {Array.from({ length: daysInMonth }).map((_, i) => {
-            const d = i + 1
-            const holiday = isHoliday(d)
-            const leaveList = isOnLeave(d)
-            const leave = leaveList[0]
-            const sat = isSaturday(d)
-            const sun = isSunday(d)
-            const compList = getCompForDay(d)
-            const myOverride = sat ? getMyOverride(d) : null
-            const ceoOverrides = sat ? getOverridesForSat(d) : []
-            const hasWork = diaryTaskDates.has(dateStr(d))
+                let satIsOff = false
+                if (sat && !isCEO) {
+                  if (myOverride?.status === 'off') satIsOff = true
+                  else if (myOverride?.status === 'working') satIsOff = false
+                  else satIsOff = !profile.works_on_sat
+                }
 
-            let satIsOff = false
-            if (sat && !isCEO) {
-              if (myOverride?.status === 'off') satIsOff = true
-              else if (myOverride?.status === 'working') satIsOff = false
-              else satIsOff = !profile.works_on_sat
-            }
+                const isOff = sun || satIsOff || holiday
+                const isToday = dateStr(d) === new Date().toISOString().split('T')[0]
 
-            const isOff = sun || satIsOff || holiday
-            const isToday = dateStr(d) === new Date().toISOString().split('T')[0]
-
-            return (
-              <div
-                key={d}
-                onClick={() => handleDayClick(d)}
-                onMouseEnter={() => setHoveredDay(d)}
-                onMouseLeave={() => setHoveredDay(null)}
-                className={`min-h-[80px] border-r border-b border-black/5 last:border-r-0 p-1.5 relative cursor-pointer hover:bg-black/[0.03] ${isOff ? 'bg-black/[0.03]' : ''} ${isToday ? 'ring-2 ring-inset ring-black' : ''}`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className={`text-sm font-semibold ${isOff ? 'text-black/40' : ''}`}>{d}</div>
-                  {hasWork && !holiday && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#C5F542] flex-shrink-0" title="Tasks submitted" />
-)}
-
-                <div className="mt-1 space-y-0.5">
-                  {holiday && (
-                    <div className="text-[8px] uppercase tracking-wider font-semibold bg-red-100 text-red-700 px-1 py-0.5 truncate">
-                      {holiday.name}
-                    </div>
-                  )}
-
-                  {isCEO && !holiday && leaveList.map((lv, idx) => (
-                    <div key={idx} className="text-[8px] uppercase tracking-wider font-semibold bg-[#C5F542] text-black px-1 py-0.5 truncate">
-                      {lv.users?.name} off
-                    </div>
-                  ))}
-
-                  {!isCEO && leave && !holiday && (
-                    <div className="text-[8px] uppercase tracking-wider font-semibold bg-[#C5F542] text-black px-1 py-0.5">
-                      Leave
-                    </div>
-                  )}
-
-                  {isCEO && compList.map((c, idx) => (
-                    <div key={idx} className="text-[8px] uppercase tracking-wider font-semibold bg-blue-100 text-blue-800 px-1 py-0.5 truncate">
-                      {c.users?.name} working
-                    </div>
-                  ))}
-                  {!isCEO && compList.length > 0 && (
-                    <div className="text-[8px] uppercase tracking-wider font-semibold bg-blue-100 text-blue-800 px-1 py-0.5">
-                      Comp day
-                    </div>
-                  )}
-
-                  {!isCEO && sat && !holiday && !leave && (
-                    <div className={`text-[8px] uppercase tracking-wider font-semibold px-1 py-0.5 ${satIsOff ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                      {satIsOff ? 'Off' : 'Work'}
-                    </div>
-                  )}
-
-                  {isCEO && sat && !holiday && ceoOverrides.length > 0 && (
-                    <div className="space-y-0.5">
-                      {ceoOverrides.some(ov => ov.status === 'off') && (
-                        <div className="text-[8px] uppercase tracking-wider font-bold bg-orange-100 text-orange-800 px-1 py-0.5">Off</div>
-                      )}
-                      {ceoOverrides.some(ov => ov.status === 'working') && (
-                        <div className="text-[8px] uppercase tracking-wider font-bold bg-blue-100 text-blue-800 px-1 py-0.5">Working</div>
+                cells.push(
+                  <td
+                    key={d}
+                    onClick={() => handleDayClick(d)}
+                    onMouseEnter={() => setHoveredDay(d)}
+                    onMouseLeave={() => setHoveredDay(null)}
+                    className={`border border-black/5 h-24 align-top p-1.5 relative cursor-pointer hover:bg-black/[0.03] transition-colors ${isOff ? 'bg-black/[0.03]' : 'bg-white'} ${isToday ? 'ring-2 ring-inset ring-black' : ''}`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span className={`text-sm font-semibold ${isOff ? 'text-black/40' : ''}`}>{d}</span>
+                      {hasWork && !holiday && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#C5F542] flex-shrink-0" />
                       )}
                     </div>
-                  )}
 
-                  {sun && !holiday && (
-                    <div className="text-[8px] uppercase tracking-wider text-black/40">Sun</div>
-                  )}
-                </div>
+                    <div className="mt-1 space-y-0.5">
+                      {holiday && (
+                        <div className="text-[7px] uppercase tracking-wider font-semibold bg-red-100 text-red-700 px-1 py-0.5 truncate">{holiday.name}</div>
+                      )}
 
-                {/* CEO Tooltip */}
-                {isCEO && hoveredDay === d && (leaveList.length > 0 || compList.length > 0) && (
-                  <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-black text-white text-xs px-3 py-2 shadow-xl whitespace-nowrap pointer-events-none">
-                    {leaveList.length > 0 && (
-                      <div className="mb-1">
-                        <div className="font-semibold mb-0.5">On Leave:</div>
-                        {leaveList.map((lv, idx) => <div key={idx} className="flex items-center gap-1"><span className="w-2 h-2 bg-[#C5F542]" />{lv.users?.name}</div>)}
+                      {isCEO && !holiday && leaveList.map((lv, idx) => (
+                        <div key={idx} className="text-[7px] uppercase tracking-wider font-semibold bg-[#C5F542] text-black px-1 py-0.5 truncate">{lv.users?.name} off</div>
+                      ))}
+
+                      {!isCEO && leave && !holiday && (
+                        <div className="text-[7px] uppercase tracking-wider font-semibold bg-[#C5F542] text-black px-1 py-0.5">Leave</div>
+                      )}
+
+                      {isCEO && compList.map((c, idx) => (
+                        <div key={idx} className="text-[7px] uppercase tracking-wider font-semibold bg-blue-100 text-blue-800 px-1 py-0.5 truncate">{c.users?.name} comp</div>
+                      ))}
+                      {!isCEO && compList.length > 0 && (
+                        <div className="text-[7px] uppercase tracking-wider font-semibold bg-blue-100 text-blue-800 px-1 py-0.5">Comp</div>
+                      )}
+
+                      {!isCEO && sat && !holiday && !leave && (
+                        <div className={`text-[7px] uppercase tracking-wider font-semibold px-1 py-0.5 ${satIsOff ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {satIsOff ? 'Off' : 'Work'}
+                        </div>
+                      )}
+
+                      {isCEO && sat && !holiday && ceoOverrides.length > 0 && (
+                        <>
+                          {ceoOverrides.some(ov => ov.status === 'off') && (
+                            <div className="text-[7px] uppercase tracking-wider font-bold bg-orange-100 text-orange-800 px-1 py-0.5">Off</div>
+                          )}
+                          {ceoOverrides.some(ov => ov.status === 'working') && (
+                            <div className="text-[7px] uppercase tracking-wider font-bold bg-blue-100 text-blue-800 px-1 py-0.5">Working</div>
+                          )}
+                        </>
+                      )}
+
+                      {sun && !holiday && (
+                        <div className="text-[7px] uppercase tracking-wider text-black/30">Sun</div>
+                      )}
+                    </div>
+
+                    {/* Tooltip */}
+                    {isCEO && hoveredDay === d && (leaveList.length > 0 || compList.length > 0) && (
+                      <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-black text-white text-xs px-3 py-2 shadow-xl whitespace-nowrap pointer-events-none">
+                        {leaveList.length > 0 && (
+                          <div className="mb-1">
+                            <div className="font-semibold mb-0.5">On Leave:</div>
+                            {leaveList.map((lv, idx) => <div key={idx} className="flex items-center gap-1"><span className="w-2 h-2 bg-[#C5F542]" />{lv.users?.name}</div>)}
+                          </div>
+                        )}
+                        {compList.length > 0 && (
+                          <div>
+                            <div className="font-semibold mb-0.5">Compensating:</div>
+                            {compList.map((c, idx) => <div key={idx} className="flex items-center gap-1"><span className="w-2 h-2 bg-blue-400" />{c.users?.name}</div>)}
+                          </div>
+                        )}
                       </div>
                     )}
-                    {compList.length > 0 && (
-                      <div>
-                        <div className="font-semibold mb-0.5">Compensating:</div>
-                        {compList.map((c, idx) => <div key={idx} className="flex items-center gap-1"><span className="w-2 h-2 bg-blue-400" />{c.users?.name}</div>)}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+                  </td>
+                )
+
+                // End of week row
+                if ((firstDay + d) % 7 === 0 || d === daysInMonth) {
+                  // Fill remaining cells in last row
+                  if (d === daysInMonth) {
+                    const remaining = 7 - cells.length
+                    for (let i = 0; i < remaining; i++) {
+                      cells.push(<td key={`r-${i}`} className="border border-black/5 h-24 align-top p-1.5 bg-white" />)
+                    }
+                  }
+                  rows.push(<tr key={`row-${rows.length}`}>{cells}</tr>)
+                  cells = []
+                }
+              }
+              return rows
+            })()}
+          </tbody>
+        </table>
       </div>
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 mt-4 text-xs">
         <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-100 border border-red-300" />Holiday</div>
-        <div className="flex items-center gap-2"><div className="w-3 h-3" style={{ background: '#C5F542' }} />Approved Leave</div>
-        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-100 border border-blue-300" />Compensatory Day</div>
-        <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#C5F542]" />Tasks Submitted</div>
+        <div className="flex items-center gap-2"><div className="w-3 h-3" style={{ background: '#C5F542' }} />Leave</div>
+        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-100 border border-blue-300" />Comp Day</div>
+        <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-[#C5F542]" />Tasks Done</div>
         {!isCEO && (
           <>
             <div className="flex items-center gap-2"><div className="w-3 h-3 bg-orange-100 border border-orange-300" />Sat Off</div>
-            <div className="text-black/50 italic">Click a Saturday to toggle · Click any date to view work</div>
+            <div className="text-black/50 italic">Click Saturday to toggle · Click any date for diary</div>
           </>
         )}
       </div>
 
       {/* Work Diary Modal */}
       {selectedDate && (
-        <Modal title={`Work Diary — ${new Date(selectedDate + 'T00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`} onClose={() => { setSelectedDate(null); setDiaryTasks([]) }}>
+        <Modal
+          title={`Work Diary — ${new Date(selectedDate + 'T00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`}
+          onClose={() => { setSelectedDate(null); setDiaryTasks([]) }}
+        >
           {diaryLoading ? <Loader /> : (
             diaryTasks.length === 0 ? (
               <div className="text-center text-black/50 py-8 text-sm">No submitted tasks for this date</div>
@@ -396,7 +395,7 @@ export default function CalendarPage() {
                   const avatar = getAvatar(task.users?.avatar_id)
                   return (
                     <div key={task.id}>
-                      <div className="flex items-center gap-3 mb-3 px-4">
+                      <div className="flex items-center gap-3 mb-3 px-2">
                         <div className="w-8 h-8 flex items-center justify-center flex-shrink-0" style={{ background: avatar.bg }}>
                           {avatar.emoji}
                         </div>
