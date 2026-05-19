@@ -105,7 +105,7 @@ export default function EmployeeLeave() {
   }
 
   const balance = profile?.leave_balance || 0
-  const nextCreditDate = getNextCreditDate(profile?.last_credited_month)
+  const nextCreditDate = getNextCreditDate(profile?.last_credited_month, profile?.leave_start_month)
   const nextCreditStr = nextCreditDate.toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'long',

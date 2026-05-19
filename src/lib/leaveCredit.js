@@ -1,7 +1,5 @@
 import { supabase } from './supabase'
 
-// Triggers the auto-credit logic on the server.
-// Called once when a user signs in.
 export const creditMonthlyLeaves = async (userId) => {
   const { data, error } = await supabase.rpc('credit_monthly_leaves', { p_user_id: userId })
   if (error) {
@@ -11,16 +9,17 @@ export const creditMonthlyLeaves = async (userId) => {
   return data?.[0] || null
 }
 
-// Compute next credit date for display
-export const getNextCreditDate = (lastCreditedMonth) => {
+export const getNextCreditDate = (lastCreditedMonth, leaveStartMonth) => {
   const today = new Date()
-  const policyStart = new Date('2026-05-01')
+  const startMonth = leaveStartMonth || '2026-06'
+  const policyStart = new Date(startMonth + '-01')
 
   if (today < policyStart) return policyStart
 
   if (lastCreditedMonth) {
     const [y, m] = lastCreditedMonth.split('-').map(Number)
-    return new Date(y, m, 1) // first of next month after lastCreditedMonth
+    return new Date(y, m, 1)
   }
+
   return policyStart
 }
