@@ -5,8 +5,11 @@ import {
   CheckCircle2, Users, X, Menu, ListTodo, CalendarDays, User as UserIcon,
   LogIn, LogOut as LogOutIcon,
 } from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import { todayISO } from '../lib/helpers'
 import { useAuth } from '../contexts/AuthContext'
 import { useNotifications } from '../contexts/NotifContext'
+import { useToast } from '../contexts/ToastContext'
 import { getAvatar } from '../lib/avatars'
 import { formatRelative } from '../lib/helpers'
 
@@ -16,6 +19,7 @@ export default function Layout({ children }) {
     handleClockIn, handleClockOut,
   } = useAuth()
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const [notifOpen, setNotifOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -58,6 +62,20 @@ export default function Layout({ children }) {
   }
 
   const onClockOut = async () => {
+    // Check if today's task sheet is submitted
+    const today = todayISO()
+    const { data } = await supabase
+      .from('daily_tasks')
+      .select('status')
+      .eq('user_id', profile.id)
+      .eq('date', today)
+      .maybeSingle()
+
+    if (!data || data.status !== 'submitted') {
+      showToast('Please submit your task sheet before clocking out', 'error')
+      return
+    }
+
     setClockingOut(true)
     await handleClockOut()
     setClockingOut(false)
@@ -122,6 +140,7 @@ export default function Layout({ children }) {
                   )}
                   {clockedIn && clockedOut && (
                     <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white/5 text-xs">
+                      <CheckCircle2 className="w-3 h-3" style={{ color: '#C5F542' }} strokeWidth={2} />
                       <span className="text-white/60">In: {clockInTime}</span>
                       <span className="text-white/30">·</span>
                       <span className="text-white/60">Out: {clockOutTime}</span>
