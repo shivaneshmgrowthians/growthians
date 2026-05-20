@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { creditMonthlyLeaves } from '../lib/leaveCredit'
-import { getCurrentTime } from '../lib/helpers'
+import { getCurrentTime, todayISO } from '../lib/helpers'
 
 const AuthContext = createContext(null)
 
@@ -9,7 +9,10 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [loginTime, setLoginTime] = useState(null)
+  const [clockedIn, setClockedIn] = useState(false)
+  const [clockedOut, setClockedOut] = useState(false)
+  const [clockInTime, setClockInTime] = useState(null)
+  const [clockOutTime, setClockOutTime] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -25,12 +28,12 @@ export function AuthProvider({ children }) {
       setSession(newSession)
       if (newSession) {
         fetchProfile(newSession.user.id)
-        if (event === 'SIGNED_IN') {
-          setLoginTime(getCurrentTime())
-        }
       } else {
         setProfile(null)
-        setLoginTime(null)
+        setClockedIn(false)
+        setClockedOut(false)
+        setClockInTime(null)
+        setClockOutTime(null)
         setLoading(false)
       }
     })
@@ -46,15 +49,34 @@ export function AuthProvider({ children }) {
       .single()
 
     if (!error && data) {
-      // Trigger auto-credit on sign-in
       await creditMonthlyLeaves(userId)
-      // Refetch after credit
       const { data: updated } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)
         .single()
       setProfile(updated || data)
+
+      // Load today's clock status
+      const today = todayISO()
+      const { data: taskData } = await supabase
+        .from('daily_tasks')
+        .select('clocked_in, clocked_out, clock_in_time, clock_out_time')
+        .eq('user_id', userId)
+        .eq('date', today)
+        .maybeSingle()
+
+      if (taskData) {
+        setClockedIn(taskData.clocked_in || false)
+        setClockedOut(taskData.clocked_out || false)
+        setClockInTime(taskData.clock_in_time || null)
+        setClockOutTime(taskData.clock_out_time || null)
+      } else {
+        setClockedIn(false)
+        setClockedOut(false)
+        setClockInTime(null)
+        setClockOutTime(null)
+      }
     }
     setLoading(false)
   }
@@ -70,18 +92,56 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // Sign in with role validation
+  const handleClockIn = async () => {
+    if (!profile?.id) return
+    const today = todayISO()
+    const time = getCurrentTime()
+
+    // Check if daily_task exists for today
+    const { data: existing } = await supabase
+      .from('daily_tasks')
+      .select('id')
+      .eq('user_id', profile.id)
+      .eq('date', today)
+      .maybeSingle()
+
+    if (existing) {
+      await supabase.from('daily_tasks')
+        .update({ clocked_in: true, clock_in_time: time, login_time: time })
+        .eq('id', existing.id)
+    } else {
+      await supabase.from('daily_tasks')
+        .insert({ user_id: profile.id, date: today, status: 'draft', clocked_in: true, clock_in_time: time, login_time: time })
+    }
+
+    setClockedIn(true)
+    setClockInTime(time)
+    return time
+  }
+
+  const handleClockOut = async () => {
+    if (!profile?.id) return
+    const today = todayISO()
+    const time = getCurrentTime()
+
+    await supabase.from('daily_tasks')
+      .update({ clocked_out: true, clock_out_time: time })
+      .eq('user_id', profile.id)
+      .eq('date', today)
+
+    setClockedOut(true)
+    setClockOutTime(time)
+    return time
+  }
+
   const signIn = async (email, password, expectedRole) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return { error }
-
-    // Verify role matches expected
     const { data: userProfile } = await supabase
       .from('users')
       .select('role')
       .eq('id', data.user.id)
       .single()
-
     if (userProfile?.role !== expectedRole) {
       await supabase.auth.signOut()
       return {
@@ -95,25 +155,15 @@ export function AuthProvider({ children }) {
     return { data }
   }
 
-  // Sign up — only allowed for CEO (first user). Employees are invited.
   const signUp = async (email, password, name) => {
-    // Check if any user already exists
     const { count } = await supabase
       .from('users')
       .select('*', { count: 'exact', head: true })
-
     if (count > 0) {
-      return {
-        error: {
-          message: 'A CEO account already exists. Please sign in instead.',
-        },
-      }
+      return { error: { message: 'A CEO account already exists. Please sign in instead.' } }
     }
-
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { name } },
+      email, password, options: { data: { name } },
     })
     return { data, error }
   }
@@ -122,20 +172,18 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut()
     setProfile(null)
     setSession(null)
-    setLoginTime(null)
+    setClockedIn(false)
+    setClockedOut(false)
+    setClockInTime(null)
+    setClockOutTime(null)
   }
 
-  // Verify current password by trying to sign in with it
   const verifyPassword = async (currentPassword) => {
     if (!session?.user?.email) return { error: { message: 'No user session' } }
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: session.user.email,
-      password: currentPassword,
-    })
+    const { data, error } = await supabase.auth.signInWithPassword({ email: session.user.email, password: currentPassword })
     return { data, error }
   }
 
-  // Update password (requires user to be signed in)
   const updatePassword = async (newPassword) => {
     const { data, error } = await supabase.auth.updateUser({ password: newPassword })
     return { data, error }
@@ -143,7 +191,12 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ session, profile, loading, loginTime, signIn, signUp, signOut, refreshProfile, verifyPassword, updatePassword }}
+      value={{
+        session, profile, loading,
+        clockedIn, clockedOut, clockInTime, clockOutTime,
+        handleClockIn, handleClockOut,
+        signIn, signUp, signOut, refreshProfile, verifyPassword, updatePassword,
+      }}
     >
       {children}
     </AuthContext.Provider>

@@ -8,7 +8,7 @@ import { AVATAR_PRESETS, getAvatar } from '../lib/avatars'
 import { getNextCreditDate } from '../lib/leaveCredit'
 
 export default function Profile() {
-  const { profile, refreshProfile, loginTime, verifyPassword, updatePassword } = useAuth()
+  const { profile, refreshProfile, clockInTime, clockOutTime, verifyPassword, updatePassword } = useAuth()
   const { showToast } = useToast()
   const [showEdit, setShowEdit] = useState(false)
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
@@ -78,12 +78,10 @@ export default function Profile() {
       showToast('New password must be at least 6 characters', 'error')
       return
     }
-
     if (passwordForm.new !== passwordForm.confirm) {
       showToast('New passwords do not match', 'error')
       return
     }
-
     if (passwordForm.current === passwordForm.new) {
       showToast('New password must be different from current', 'error')
       return
@@ -91,7 +89,6 @@ export default function Profile() {
 
     setChangingPassword(true)
 
-    // Step 1: Verify current password
     const { error: verifyError } = await verifyPassword(passwordForm.current)
     if (verifyError) {
       showToast('Current password is incorrect', 'error')
@@ -99,7 +96,6 @@ export default function Profile() {
       return
     }
 
-    // Step 2: Update to new password
     const { error: updateError } = await updatePassword(passwordForm.new)
     if (updateError) {
       showToast(updateError.message || 'Failed to update password', 'error')
@@ -113,8 +109,7 @@ export default function Profile() {
     setChangingPassword(false)
   }
 
-  // Calculate next credit date display
-  const nextCreditDate = getNextCreditDate(profile.last_credited_month)
+  const nextCreditDate = getNextCreditDate(profile.last_credited_month, profile.leave_start_month)
   const nextCreditStr = nextCreditDate.toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'long',
@@ -215,10 +210,12 @@ export default function Profile() {
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="bg-white border border-black/10 p-6">
                   <div className="text-xs uppercase tracking-widest text-black/50 font-semibold mb-2">
-                    Today's Login
+                    Today's Clock
                   </div>
-                  <div className="text-2xl font-bold">{loginTime || '—'}</div>
-                  <div className="text-xs text-black/50 mt-1">Auto-tracked at sign-in</div>
+                  <div className="text-2xl font-bold">{clockInTime || 'Not clocked in'}</div>
+                  <div className="text-xs text-black/50 mt-1">
+                    {clockOutTime ? `Out: ${clockOutTime}` : 'Not clocked out yet'}
+                  </div>
                 </div>
                 <div className="bg-white border border-black/10 p-6">
                   <div className="text-xs uppercase tracking-widest text-black/50 font-semibold mb-2">
@@ -330,7 +327,6 @@ export default function Profile() {
       {showChangePassword && (
         <Modal title="Change Password" onClose={() => setShowChangePassword(false)}>
           <form onSubmit={handleChangePassword} className="space-y-4">
-            {/* Current Password */}
             <div>
               <label className="block text-[10px] uppercase tracking-widest text-black/60 mb-1.5 font-semibold">
                 Current Password
@@ -355,7 +351,6 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* New Password */}
             <div>
               <label className="block text-[10px] uppercase tracking-widest text-black/60 mb-1.5 font-semibold">
                 New Password
@@ -381,7 +376,6 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Confirm New Password */}
             <div>
               <label className="block text-[10px] uppercase tracking-widest text-black/60 mb-1.5 font-semibold">
                 Confirm New Password
