@@ -219,36 +219,50 @@ export default function EmployeeTodaySheet() {
           </div>
         </div>
       )}
-
-      {/* Desktop 3-column layout */}
+      
+      {/* Desktop 3-column */}
       <div className="hidden md:block border-2 border-black/20 overflow-hidden mb-6">
-        <div className="grid grid-cols-3 bg-black text-white divide-x divide-white/10">
-          <div className="px-4 py-3 flex items-center justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-wider">Tasks Worked On</h3>
-            {!submitted && <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2 py-1 flex items-center gap-1"><Settings className="w-3 h-3" strokeWidth={2} />Slots</button>}
-          </div>
-          <div className="px-4 py-3"><h3 className="text-sm font-bold uppercase tracking-wider">Day's Agenda</h3></div>
-          <div className="px-4 py-3"><h3 className="text-sm font-bold uppercase tracking-wider">Task Pending</h3></div>
-        </div>
-        {todaySlots.map((slot) => (
-          <div key={slot.slot_index} className="grid grid-cols-3 border-t border-black/10 divide-x divide-black/10 group">
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-black/5 border-b border-black/10">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-black/50">{slot.time_slot}</span>
-                {!submitted && todaySlots.length > 1 && <button onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))} className="opacity-0 group-hover:opacity-100 text-black/30 hover:text-black"><Trash2 className="w-3 h-3" /></button>}
-              </div>
-              <textarea disabled={submitted} value={slot.tasks_worked_on} onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)} className="flex-1 w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none" style={{ minHeight: '90px' }} placeholder="What did you work on?" />
-            </div>
-            <div className="flex flex-col">
-              <div className="px-3 py-1.5 bg-black/5 border-b border-black/10"><span className="text-[10px] invisible">x</span></div>
-              <textarea disabled={submitted} value={slot.days_agenda} onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)} className="flex-1 w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none" style={{ minHeight: '90px' }} placeholder="—" />
-            </div>
-            <div className="flex flex-col">
-              <div className="px-3 py-1.5 bg-black/5 border-b border-black/10"><span className="text-[10px] invisible">x</span></div>
-              <textarea disabled={submitted} value={slot.task_pending} onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)} className="flex-1 w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none" style={{ minHeight: '90px' }} placeholder="—" />
-            </div>
-          </div>
-        ))}
+        <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+          <thead>
+            <tr className="bg-black text-white">
+              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3 border-r border-white/10" style={{ width: '40%' }}>
+                <div className="flex items-center justify-between">
+                  <span>Tasks Worked On</span>
+                  {!submitted && (
+                    <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2 py-1 flex items-center gap-1 font-medium">
+                      <Settings className="w-3 h-3" strokeWidth={2} />Slots
+                    </button>
+                  )}
+                </div>
+              </th>
+              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3 border-r border-white/10" style={{ width: '30%' }}>Day's Agenda</th>
+              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3" style={{ width: '30%' }}>Task Pending</th>
+            </tr>
+          </thead>
+          <tbody>
+            {todaySlots.map((slot) => (
+              <tr key={slot.slot_index} className="border-t border-black/10 group">
+                <td className="border-r border-black/10 align-top p-0">
+                  <div className="px-3 py-1.5 bg-black/5 border-b border-black/10 flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
+                    {!submitted && todaySlots.length > 1 && (
+                      <button onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))} className="opacity-0 group-hover:opacity-100 text-black/30 hover:text-black">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  <textarea disabled={submitted} value={slot.tasks_worked_on} onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)} className="w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none min-h-[70px]" placeholder="What did you work on?" />
+                </td>
+                <td className="border-r border-black/10 align-top p-0">
+                  <textarea disabled={submitted} value={slot.days_agenda} onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)} className="w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none min-h-[96px]" placeholder="—" />
+                </td>
+                <td className="align-top p-0">
+                  <textarea disabled={submitted} value={slot.task_pending} onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)} className="w-full px-3 py-2 text-sm bg-white focus:outline-none disabled:text-black resize-none min-h-[96px]" placeholder="—" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Mobile single-column with tabs */}
