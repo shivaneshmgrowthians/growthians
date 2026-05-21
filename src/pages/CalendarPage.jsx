@@ -100,7 +100,6 @@ export default function CalendarPage() {
     return satOverrides.filter((o) => o.sat_date === dateStr(d))
   }
 
-  // Load submitted task dates for current month
   useEffect(() => {
     if (!profile?.id) return
     const loadMonthTasks = async () => {
@@ -181,6 +180,8 @@ export default function CalendarPage() {
     }
   }
 
+  const CELL_HEIGHT = 100
+
   return (
     <div>
       <PageHeader
@@ -230,7 +231,6 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Day headers */}
         <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr className="border-b border-black/10">
@@ -243,10 +243,9 @@ export default function CalendarPage() {
             {(() => {
               const rows = []
               let cells = []
-              // Empty cells before first day
               for (let i = 0; i < firstDay; i++) {
                 cells.push(
-                  <td key={`e-${i}`} className="border border-black/5 h-24 align-top p-1.5 bg-white" />
+                  <td key={`e-${i}`} className="border border-black/5 align-top p-1.5 bg-white" style={{ height: CELL_HEIGHT }} />
                 )
               }
               for (let d = 1; d <= daysInMonth; d++) {
@@ -276,7 +275,8 @@ export default function CalendarPage() {
                     onClick={() => handleDayClick(d)}
                     onMouseEnter={() => setHoveredDay(d)}
                     onMouseLeave={() => setHoveredDay(null)}
-                    className={`border border-black/5 h-24 align-top p-1.5 relative cursor-pointer hover:bg-black/[0.03] transition-colors ${isOff ? 'bg-black/[0.03]' : 'bg-white'} ${isToday ? 'ring-2 ring-inset ring-black' : ''}`}
+                    className={`border border-black/5 align-top p-1.5 relative cursor-pointer hover:bg-black/[0.03] transition-colors ${isOff ? 'bg-black/[0.03]' : 'bg-white'} ${isToday ? 'ring-2 ring-inset ring-black' : ''}`}
+                    style={{ height: CELL_HEIGHT }}
                   >
                     <div className="flex items-center gap-1">
                       <span className={`text-sm font-semibold ${isOff ? 'text-black/40' : ''}`}>{d}</span>
@@ -327,7 +327,6 @@ export default function CalendarPage() {
                       )}
                     </div>
 
-                    {/* Tooltip */}
                     {isCEO && hoveredDay === d && (leaveList.length > 0 || compList.length > 0) && (
                       <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-black text-white text-xs px-3 py-2 shadow-xl whitespace-nowrap pointer-events-none">
                         {leaveList.length > 0 && (
@@ -347,13 +346,11 @@ export default function CalendarPage() {
                   </td>
                 )
 
-                // End of week row
                 if ((firstDay + d) % 7 === 0 || d === daysInMonth) {
-                  // Fill remaining cells in last row
                   if (d === daysInMonth) {
                     const remaining = 7 - cells.length
                     for (let i = 0; i < remaining; i++) {
-                      cells.push(<td key={`r-${i}`} className="border border-black/5 h-24 align-top p-1.5 bg-white" />)
+                      cells.push(<td key={`r-${i}`} className="border border-black/5 align-top p-1.5 bg-white" style={{ height: CELL_HEIGHT }} />)
                     }
                   }
                   rows.push(<tr key={`row-${rows.length}`}>{cells}</tr>)
@@ -366,7 +363,6 @@ export default function CalendarPage() {
         </table>
       </div>
 
-      {/* Legend */}
       <div className="flex flex-wrap gap-4 mt-4 text-xs">
         <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-100 border border-red-300" />Holiday</div>
         <div className="flex items-center gap-2"><div className="w-3 h-3" style={{ background: '#C5F542' }} />Leave</div>
@@ -380,11 +376,11 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {/* Work Diary Modal */}
       {selectedDate && (
         <Modal
           title={`Work Diary — ${new Date(selectedDate + 'T00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`}
           onClose={() => { setSelectedDate(null); setDiaryTasks([]) }}
+          wide
         >
           {diaryLoading ? <Loader /> : (
             diaryTasks.length === 0 ? (
@@ -402,7 +398,7 @@ export default function CalendarPage() {
                         <div>
                           <div className="font-semibold text-sm">{task.users?.name}</div>
                           <div className="text-[10px] text-black/50">
-                            {task.users?.designation} · In: {task.login_time || '—'} · Out: {task.logoff_time || '—'} · {task.total_hours || 0}h
+                            {task.users?.designation} · In: {task.clock_in_time || task.login_time || '—'} · Out: {task.clock_out_time || task.logoff_time || '—'} · {task.total_hours || 0}h
                           </div>
                         </div>
                       </div>
