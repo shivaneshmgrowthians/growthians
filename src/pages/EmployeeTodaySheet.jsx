@@ -107,7 +107,7 @@ export default function EmployeeTodaySheet() {
   }
 
   const loadTeamToday = async () => {
-    const { data: users } = await supabase.from('users').select('id, name, avatar_id, designation').eq('active', true).neq('id', profile.id)
+    const { data: users } = await supabase.from('users').select('id, name, avatar_id, designation').eq('active', true).eq('role', 'employee').eq('id', profile.id)
     if (!users?.length) return
     const { data: tasks } = await supabase.from('daily_tasks').select('user_id, status, clock_in_time, clock_out_time').eq('date', today).in('user_id', users.map(u => u.id))
     setTeamToday(users.map(u => { const task = tasks?.find(t => t.user_id === u.id); return { ...u, task_status: task?.status || 'not started', clock_in_time: task?.clock_in_time, clock_out_time: task?.clock_out_time } }))
