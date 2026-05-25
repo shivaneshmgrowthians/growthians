@@ -176,44 +176,50 @@ export default function EmployeeTodaySheet() {
         }
       />
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div className="p-4 bg-white rounded-xl shadow-sm border border-black/[0.06] relative overflow-hidden hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-1.5 mb-2">
-            <div className="w-6 h-6 rounded-lg bg-black/5 flex items-center justify-center"><Clock className="w-3.5 h-3.5 text-black/40" strokeWidth={2} /></div>
-            <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-semibold text-black/40">Clock In</span>
-          </div>
-          <div className="text-xl sm:text-2xl font-bold tracking-tight">{clockInTime || '—'}</div>
-          {clockedIn && !clockedOut && <div className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-[#C5F542] animate-pulse shadow-[0_0_8px_rgba(197,245,66,0.5)]" />}
-        </div>
-        <div className="p-4 bg-white rounded-xl shadow-sm border border-black/[0.06] hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-1.5 mb-2">
-            <div className="w-6 h-6 rounded-lg bg-black/5 flex items-center justify-center"><Clock className="w-3.5 h-3.5 text-black/40" strokeWidth={2} /></div>
-            <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-semibold text-black/40">Clock Out</span>
-          </div>
-          <div className="text-xl sm:text-2xl font-bold tracking-tight">{clockOutTime || '—'}</div>
-        </div>
-        <div className="p-4 bg-black rounded-xl shadow-lg relative overflow-hidden">
-          <div className="absolute inset-0 opacity-10" style={{ background: 'radial-gradient(circle at top right, #C5F542 0%, transparent 60%)' }} />
-          <div className="relative">
+      {/* Stat Cards - Glassmorphism */}
+      <div className="rounded-xl p-5 mb-6" style={{ background: 'linear-gradient(135deg, #111 0%, #1a1a2e 100%)' }}>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="p-4 rounded-xl relative overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div className="flex items-center gap-1.5 mb-2">
-              <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><Timer className="w-3.5 h-3.5" style={{ color: '#C5F542' }} strokeWidth={2} /></div>
-              <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-semibold text-white/40">Work Hours</span>
+              <Clock className="w-3.5 h-3.5 text-white/40" strokeWidth={2} />
+              <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-semibold text-white/40">Clock in</span>
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-white tracking-tight">{clockInTime || '—'}</div>
+            <div className="mt-2 h-[2px] rounded-full" style={{ background: 'rgba(197,245,66,0.2)' }}>
+              <div className="h-full rounded-full" style={{ width: clockInTime ? '100%' : '0%', background: '#C5F542' }} />
+            </div>
+            {clockedIn && !clockedOut && <div className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: '#C5F542', boxShadow: '0 0 8px rgba(197,245,66,0.5)' }} />}
+          </div>
+          <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Clock className="w-3.5 h-3.5 text-white/40" strokeWidth={2} />
+              <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-semibold text-white/40">Clock out</span>
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-white tracking-tight">{clockOutTime || '—'}</div>
+            <div className="mt-2 h-[2px] rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }}>
+              <div className="h-full rounded-full" style={{ width: clockOutTime ? '100%' : '0%', background: '#ef4444' }} />
+            </div>
+          </div>
+          <div className="p-4 rounded-xl" style={{ background: 'rgba(197,245,66,0.1)', border: '1px solid rgba(197,245,66,0.15)' }}>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Timer className="w-3.5 h-3.5" style={{ color: 'rgba(197,245,66,0.6)' }} strokeWidth={2} />
+              <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-semibold" style={{ color: 'rgba(197,245,66,0.6)' }}>Work hours</span>
             </div>
             <div className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: '#C5F542' }}>{totalWorkHours > 0 ? `${totalWorkHours}h` : `${todayHours}h`}</div>
-          </div>
-        </div>
-        <div className="p-4 bg-white rounded-xl shadow-sm border border-black/[0.06] hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-1.5 mb-2">
-            <div className="w-6 h-6 rounded-lg bg-black/5 flex items-center justify-center"><ListTodo className="w-3.5 h-3.5 text-black/40" strokeWidth={2} /></div>
-            <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-semibold text-black/40">Slots</span>
-          </div>
-          <div className="text-xl sm:text-2xl font-bold tracking-tight">{filledCount}<span className="text-base text-black/20 font-normal">/{todaySlots.length}</span></div>
-          {todaySlots.length > 0 && (
-            <div className="mt-2 h-1.5 bg-black/5 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${(filledCount / todaySlots.length) * 100}%`, background: filledCount === todaySlots.length ? '#C5F542' : '#000' }} />
+            <div className="mt-2 h-[2px] rounded-full" style={{ background: 'rgba(197,245,66,0.2)' }}>
+              <div className="h-full rounded-full" style={{ width: `${Math.min(100, ((totalWorkHours || todayHours) / 9) * 100)}%`, background: '#C5F542' }} />
             </div>
-          )}
+          </div>
+          <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-center gap-1.5 mb-2">
+              <ListTodo className="w-3.5 h-3.5 text-white/40" strokeWidth={2} />
+              <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-semibold text-white/40">Slots</span>
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-white tracking-tight">{filledCount}<span className="text-base text-white/20 font-normal">/{todaySlots.length}</span></div>
+            <div className="mt-2 h-[2px] rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }}>
+              <div className="h-full rounded-full transition-all" style={{ width: todaySlots.length > 0 ? `${(filledCount / todaySlots.length) * 100}%` : '0%', background: filledCount === todaySlots.length ? '#C5F542' : '#fff' }} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -232,27 +238,27 @@ export default function EmployeeTodaySheet() {
 
       {/* Desktop Table */}
       <div className="hidden md:block rounded-xl overflow-hidden shadow-sm border border-black/[0.06] mb-6">
-        <div className="h-1 rounded-t-xl" style={{ background: 'linear-gradient(90deg, #C5F542 0%, #a8d935 100%)' }} />
+        <div className="h-[3px] rounded-t-xl" style={{ background: 'linear-gradient(90deg, #C5F542 0%, #8BC34A 50%, #4CAF50 100%)' }} />
         <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
           <thead>
-            <tr style={{ background: 'linear-gradient(180deg, #111 0%, #000 100%)' }} className="text-white">
-              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3.5 border-r border-white/10" style={{ width: '40%' }}>
+            <tr style={{ background: 'linear-gradient(180deg, #0a0a0a 0%, #111 100%)' }}>
+              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3.5 border-r border-white/[0.06]" style={{ width: '40%', color: '#C5F542' }}>
                 <div className="flex items-center justify-between">
-                  <span>Tasks Worked On</span>
+                  <span>Tasks worked on</span>
                   {!submitted && (
-                    <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-md flex items-center gap-1 font-medium transition-colors">
+                    <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-md flex items-center gap-1 font-medium transition-colors text-white/60">
                       <Settings className="w-3 h-3" strokeWidth={2} />Slots
                     </button>
                   )}
                 </div>
               </th>
-              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3.5 border-r border-white/10" style={{ width: '30%' }}>Day's Agenda</th>
-              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3.5" style={{ width: '30%' }}>Task Pending</th>
+              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3.5 border-r border-white/[0.06] text-white/60" style={{ width: '30%' }}>Day's agenda</th>
+              <th className="text-left text-sm font-bold uppercase tracking-wider px-4 py-3.5 text-white/60" style={{ width: '30%' }}>Task pending</th>
             </tr>
           </thead>
           <tbody>
             {todaySlots.map((slot, idx) => (
-              <tr key={slot.slot_index} className={`className="group bg-[#FCFEF5]">
+              <tr key={slot.slot_index} className={`group ${idx % 2 === 0 ? 'bg-white' : 'bg-[#FCFEF5]'}`}>
                 <td className="border-r border-black/[0.06] align-top p-0">
                   <div className="px-3 py-1.5 bg-black/[0.04] border-b border-black/[0.06] flex items-center justify-between">
                     <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
@@ -264,14 +270,14 @@ export default function EmployeeTodaySheet() {
                   </div>
                   <div className="relative">
                     {slot.tasks_worked_on?.trim() && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#C5F542]" />}
-                    <textarea disabled={submitted} value={slot.tasks_worked_on} onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-[#C5F542]/[0.03] disabled:text-black resize-none transition-colors min-h-[70px]" placeholder="What did you work on?" />
+                    <textarea disabled={submitted} value={slot.tasks_worked_on} onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[70px]" placeholder="What did you work on?" />
                   </div>
                 </td>
                 <td className="border-r border-black/[0.06] align-top p-0">
-                  <textarea disabled={submitted} value={slot.days_agenda} onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-[#C5F542]/[0.03] disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
+                  <textarea disabled={submitted} value={slot.days_agenda} onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
                 </td>
                 <td className="align-top p-0">
-                  <textarea disabled={submitted} value={slot.task_pending} onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-[#C5F542]/[0.03] disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
+                  <textarea disabled={submitted} value={slot.task_pending} onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
                 </td>
               </tr>
             ))}
@@ -311,7 +317,7 @@ export default function EmployeeTodaySheet() {
       {teamToday.length > 0 && (
         <div className="mb-8">
           <h3 className="text-sm uppercase tracking-widest font-semibold text-black/40 mb-3 flex items-center gap-2">
-            <Eye className="w-4 h-4" strokeWidth={1.8} />Team's Today
+            <Eye className="w-4 h-4" strokeWidth={1.8} />Team's today
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {teamToday.map((u) => {
@@ -332,11 +338,9 @@ export default function EmployeeTodaySheet() {
                       <div className="text-[10px] text-black/40">{u.designation}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] uppercase tracking-widest font-semibold px-2 py-0.5 rounded ${isSub ? 'bg-[#C5F542]/20 text-[#5a7a00]' : isDraft ? 'bg-yellow-50 text-yellow-700' : 'bg-black/[0.03] text-black/30'}`}>
-                      {isSub ? 'Submitted' : isDraft ? 'In Progress' : 'Not Started'}
-                    </span>
-                  </div>
+                  <span className={`text-[10px] uppercase tracking-widest font-semibold px-2 py-0.5 rounded ${isSub ? 'bg-[#C5F542]/20 text-[#5a7a00]' : isDraft ? 'bg-yellow-50 text-yellow-700' : 'bg-black/[0.03] text-black/30'}`}>
+                    {isSub ? 'Submitted' : isDraft ? 'In Progress' : 'Not Started'}
+                  </span>
                   {u.clock_in_time && <div className="text-[10px] text-black/30 mt-2">In: {u.clock_in_time}{u.clock_out_time ? ` · Out: ${u.clock_out_time}` : ''}</div>}
                 </button>
               )
@@ -350,7 +354,7 @@ export default function EmployeeTodaySheet() {
         <button onClick={() => setShowAnalytics(!showAnalytics)} className="flex items-center justify-between w-full mb-4 group">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-black/5 flex items-center justify-center"><BarChart3 className="w-4 h-4 text-black/40" strokeWidth={1.8} /></div>
-            <span className="text-xs uppercase tracking-widest font-semibold text-black/40">My Analytics</span>
+            <span className="text-xs uppercase tracking-widest font-semibold text-black/40">My analytics</span>
           </div>
           <ChevronDown className={`w-4 h-4 text-black/20 transition-transform ${showAnalytics ? 'rotate-180' : ''}`} strokeWidth={2} />
         </button>
@@ -370,7 +374,7 @@ export default function EmployeeTodaySheet() {
               <div className="bg-black rounded-xl p-4 relative overflow-hidden shadow-lg">
                 <div className="absolute inset-0 opacity-10" style={{ background: 'radial-gradient(circle at top right, #C5F542 0%, transparent 60%)' }} />
                 <div className="relative">
-                  <div className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-1">Total Hours</div>
+                  <div className="text-[10px] uppercase tracking-widest text-white/40 font-semibold mb-1">Total hours</div>
                   <div className="text-2xl sm:text-3xl font-bold" style={{ color: '#C5F542' }}>{Math.round(totalMonthHours * 10) / 10}h</div>
                 </div>
               </div>
@@ -385,14 +389,14 @@ export default function EmployeeTodaySheet() {
                 <div className="text-[10px] text-black/30">Bal: {profile?.leave_balance || 0}</div>
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-black/[0.06] p-4">
-                <div className="text-[10px] uppercase tracking-widest text-black/40 font-semibold mb-1">Avg/Day</div>
+                <div className="text-[10px] uppercase tracking-widest text-black/40 font-semibold mb-1">Avg/day</div>
                 <div className="text-2xl sm:text-3xl font-bold">{daysSubmitted > 0 ? Math.round((totalMonthHours / daysSubmitted) * 10) / 10 : 0}h</div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <div className="bg-white rounded-xl shadow-sm border border-black/[0.06] p-5">
-                <h4 className="text-xs uppercase tracking-widest font-semibold text-black/40 mb-4">Daily Hours</h4>
+                <h4 className="text-xs uppercase tracking-widest font-semibold text-black/40 mb-4">Daily hours</h4>
                 {dailyHoursData.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-[200px] text-black/20">
                     <BarChart3 className="w-8 h-8 mb-2" strokeWidth={1} />
@@ -412,7 +416,7 @@ export default function EmployeeTodaySheet() {
                 )}
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-black/[0.06] p-5">
-                <h4 className="text-xs uppercase tracking-widest font-semibold text-black/40 mb-4">Weekly Hours</h4>
+                <h4 className="text-xs uppercase tracking-widest font-semibold text-black/40 mb-4">Weekly hours</h4>
                 {weeklyHoursData.every(w => w.hours === 0) ? (
                   <div className="flex flex-col items-center justify-center h-[200px] text-black/20">
                     <TrendingUp className="w-8 h-8 mb-2" strokeWidth={1} />
