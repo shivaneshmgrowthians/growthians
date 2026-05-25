@@ -258,7 +258,7 @@ export default function EmployeeTodaySheet() {
           </thead>
           <tbody>
             {todaySlots.map((slot, idx) => (
-              <tr key={slot.slot_index} className={`group ${idx % 2 === 0 ? 'bg-white' : 'bg-[#FCFEF5]'}`}>
+              <tr key={slot.slot_index} className=className={`group ${idx % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}>
                 <td className="border-r border-black/[0.06] align-top p-0">
                   <div className="px-3 py-1.5 bg-black/[0.04] border-b border-black/[0.06] flex items-center justify-between">
                     <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
