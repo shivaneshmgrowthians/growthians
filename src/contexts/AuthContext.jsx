@@ -48,14 +48,20 @@ export function AuthProvider({ children }) {
       .eq('id', userId)
       .single()
 
-    if (!error && data) {
-      await creditMonthlyLeaves(userId)
-      const { data: updated } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single()
-      setProfile(updated || data)
+   if (!error && data) {
+      setProfile(data)
+      // Credit leaves in background — don't block profile load
+      creditMonthlyLeaves(userId).then(async (result) => {
+        if (result?.credited > 0) {
+          const { data: updated } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .single()
+          if (updated) setProfile(updated)
+        }
+      })
+    }
 
       // Load today's clock status
       const today = todayISO()
