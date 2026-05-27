@@ -57,16 +57,32 @@ export default function EmployeeTodaySheet() {
   const submitted = status === 'submitted'
   const totalWorkHours = calcWorkHours(clockInTime, clockOutTime)
 
-  useEffect(() => { if (profile?.id && clockedIn) { loadData(); loadTeamToday() } }, [profile?.id, clockedIn])
-  useEffect(() => { if (profile?.id) loadAnalytics() }, [profile?.id, analyticsMonth])
+useEffect(() => {
+    if (profile?.id && clockedIn) {
+      loadData()
+      // Load team in background — don't block main sheet
+      loadTeamToday()
+      loadAnalytics()
+    }
+  }, [profile?.id, clockedIn])
+useEffect(() => { if (profile?.id && clockedIn) loadAnalytics() }, [analyticsMonth])
   useEffect(() => {
     if (!profile?.id || submitted || !clockedIn) return
     autoSaveInterval.current = setInterval(() => { if (todaySlots.length > 0 && dailyTaskId) autosave(todaySlots) }, 5000)
     return () => clearInterval(autoSaveInterval.current)
   }, [profile?.id, submitted, todaySlots, dailyTaskId, clockedIn])
   useEffect(() => { return () => { if (spectateTimer.current) clearInterval(spectateTimer.current) } }, [])
-
-  const loadData = async () => {
+const loadData = async () => {
+    setLoading(true)
+    // Run all queries in parallel instead of sequentially
+    const [slotsRes, taskRes] = await Promise.all([
+      supabase.from('user_slots').select('*').eq('user_id', profile.id).order('slot_index', { ascending: true }),
+      supabase.from('daily_tasks').select('*, task_slots(*)').eq('user_id', profile.id).eq('date', today).maybeSingle()
+    ])
+    const slotsData = slotsRes.data || []
+    const taskData = taskRes.data
+    setUserSlots(slotsData)
+   loadData = async () => {
     setLoading(true)
     const { data: slotsData } = await supabase.from('user_slots').select('*').eq('user_id', profile.id).order('slot_index', { ascending: true })
     setUserSlots(slotsData || [])
