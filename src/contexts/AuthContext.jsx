@@ -18,7 +18,7 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       if (data.session) {
-        fetchProfile(data.session.user.id)
+        fetchProfile(data.session.user)
       } else {
         setLoading(false)
       }
@@ -27,7 +27,7 @@ export function AuthProvider({ children }) {
     const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession)
       if (newSession) {
-        fetchProfile(newSession.user.id)
+        fetchProfile(newSession.user)
       } else {
         setProfile(null)
         setClockedIn(false)
@@ -41,49 +41,76 @@ export function AuthProvider({ children }) {
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  const fetchProfile = async (userId) => {
-    const { data, error } = await supabase
+  const fetchProfile = async (authUser) => {
+    const userId = authUser.id
+    const email = authUser.email
+
+    // Try to find user by ID first
+    let { data, error } = await supabase
       .from('users')
       .select('*')
       .eq('id', userId)
       .single()
 
-   if (!error && data) {
-      setProfile(data)
-      // Credit leaves in background — don't block profile load
-      creditMonthlyLeaves(userId).then(async (result) => {
-        if (result?.credited > 0) {
-          const { data: updated } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', userId)
-            .single()
-          if (updated) setProfile(updated)
-        }
-      })
-    }
+    // If not found by ID, try by email (Google OAuth creates new auth user)
+    if (error || !data) {
+      const { data: emailMatch } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .single()
 
-      // Load today's clock status
-      const today = todayISO()
-      const { data: taskData } = await supabase
-        .from('daily_tasks')
-        .select('clocked_in, clocked_out, clock_in_time, clock_out_time')
-        .eq('user_id', userId)
-        .eq('date', today)
-        .maybeSingle()
-
-      if (taskData) {
-        setClockedIn(taskData.clocked_in || false)
-        setClockedOut(taskData.clocked_out || false)
-        setClockInTime(taskData.clock_in_time || null)
-        setClockOutTime(taskData.clock_out_time || null)
+      if (emailMatch) {
+        // Link: update the users table row to use the new auth ID
+        await supabase
+          .from('users')
+          .update({ id: userId })
+          .eq('email', email)
+        data = { ...emailMatch, id: userId }
       } else {
-        setClockedIn(false)
-        setClockedOut(false)
-        setClockInTime(null)
-        setClockOutTime(null)
+        // User not found — not an existing user, block sign in
+        await supabase.auth.signOut()
+        setProfile(null)
+        setLoading(false)
+        return
       }
     }
+
+    setProfile(data)
+
+    // Credit leaves in background
+    creditMonthlyLeaves(userId).then(async (result) => {
+      if (result?.credited > 0) {
+        const { data: updated } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .single()
+        if (updated) setProfile(updated)
+      }
+    })
+
+    // Load today's clock status
+    const today = todayISO()
+    const { data: taskData } = await supabase
+      .from('daily_tasks')
+      .select('clocked_in, clocked_out, clock_in_time, clock_out_time')
+      .eq('user_id', userId)
+      .eq('date', today)
+      .maybeSingle()
+
+    if (taskData) {
+      setClockedIn(taskData.clocked_in || false)
+      setClockedOut(taskData.clocked_out || false)
+      setClockInTime(taskData.clock_in_time || null)
+      setClockOutTime(taskData.clock_out_time || null)
+    } else {
+      setClockedIn(false)
+      setClockedOut(false)
+      setClockInTime(null)
+      setClockOutTime(null)
+    }
+
     setLoading(false)
   }
 
@@ -103,7 +130,6 @@ export function AuthProvider({ children }) {
     const today = todayISO()
     const time = getCurrentTime()
 
-    // Check if daily_task exists for today
     const { data: existing } = await supabase
       .from('daily_tasks')
       .select('id')
