@@ -40,8 +40,9 @@ export default function Layout({ children }) {
     { to: '/profile', label: 'Profile', icon: UserIcon },
   ]
 
-  const ceoNav = [
+const ceoNav = [
     { to: '/', label: 'Dashboard', icon: Home, end: true },
+    { to: '/sheet', label: "Today's Sheet", icon: ClipboardList },
     { to: '/approvals', label: 'Approvals', icon: CheckCircle2 },
     { to: '/calendar', label: 'Calendar', icon: CalendarDays },
     { to: '/team', label: 'Team', icon: Users },
@@ -80,7 +81,7 @@ export default function Layout({ children }) {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
-              {!isCEO && (
+{(
                 <div className="flex items-center gap-2">
                   {!clockedIn && (
                     <button onClick={onClockIn} disabled={clockingIn}

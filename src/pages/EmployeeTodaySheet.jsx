@@ -56,18 +56,16 @@ export default function EmployeeTodaySheet() {
   const today = todayISO()
   const submitted = status === 'submitted'
   const totalWorkHours = calcWorkHours(clockInTime, clockOutTime)
-
 useEffect(() => {
-    if (profile?.id && clockedIn) {
+    if (profile?.id && (clockedIn || profile?.role === 'ceo')) {
       loadData()
-      // Load team in background — don't block main sheet
       loadTeamToday()
       loadAnalytics()
     }
   }, [profile?.id, clockedIn])
 useEffect(() => { if (profile?.id && clockedIn) loadAnalytics() }, [analyticsMonth])
   useEffect(() => {
-    if (!profile?.id || submitted || !clockedIn) return
+  if (!profile?.id || submitted || (!clockedIn && profile?.role !== 'ceo')) return
     autoSaveInterval.current = setInterval(() => { if (todaySlots.length > 0 && dailyTaskId) autosave(todaySlots) }, 5000)
     return () => clearInterval(autoSaveInterval.current)
   }, [profile?.id, submitted, todaySlots, dailyTaskId, clockedIn])

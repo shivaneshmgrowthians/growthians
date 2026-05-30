@@ -32,7 +32,6 @@ function ProtectedRoutes() {
   const { profile, loading } = useAuth()
 
   if (loading) return <Loader label="Loading session" />
-
   if (!profile) return <Navigate to="/auth" replace />
 
   const isCEO = profile.role === 'ceo'
@@ -40,23 +39,19 @@ function ProtectedRoutes() {
   return (
     <Layout>
       <Routes>
-        {/* Home route differs by role */}
         <Route path="/" element={isCEO ? <CEODashboard /> : <EmployeeTodaySheet />} />
-
-        {/* Shared routes */}
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/profile" element={<Profile />} />
 
-        {/* CEO-only routes */}
         {isCEO && (
           <>
+            <Route path="/sheet" element={<EmployeeTodaySheet />} />
             <Route path="/approvals" element={<CEOApprovals />} />
             <Route path="/team" element={<CEOTeam />} />
             <Route path="/team/:userId" element={<CEOMemberView />} />
           </>
         )}
 
-        {/* Employee-only routes */}
         {!isCEO && (
           <>
             <Route path="/lists" element={<EmployeeLists />} />
@@ -66,7 +61,6 @@ function ProtectedRoutes() {
           </>
         )}
 
-        {/* Catch-all redirects to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
@@ -103,10 +97,7 @@ function AppRouter() {
     )
   }
 
-  // Detect Supabase invite token in URL hash and redirect to set-password page
-  // Supabase puts auth tokens in the hash like: #access_token=...&type=invite
   if (hash && hash.includes('type=invite')) {
-    // Replace the URL with set-password path while keeping the hash (which has the token)
     window.history.replaceState(null, '', '/auth/set-password' + hash)
     return (
       <Routes>
@@ -115,8 +106,6 @@ function AppRouter() {
     )
   }
 
-  // Special route: set-password is accessible whether logged in or not
-  // (invited users get auto-logged in via the invite link, so they need to access this)
   if (path === '/auth/set-password') {
     return (
       <Routes>
