@@ -20,8 +20,11 @@ function calcWorkHours(inTime, outTime) {
   const parse = (t) => {
     const match = t.match(/(\d+):(\d+)\s*(am|pm)/i)
     if (!match) return 0
-    let h = parseInt(match[1]); const m = parseInt(match[2]); const p = match[3].toLowerCase()
-    if (p === 'pm' && h !== 12) h += 12; if (p === 'am' && h === 12) h = 0
+    let h = parseInt(match[1])
+    const m = parseInt(match[2])
+    const p = match[3].toLowerCase()
+    if (p === 'pm' && h !== 12) h += 12
+    if (p === 'am' && h === 12) h = 0
     return h * 60 + m
   }
   const diff = parse(outTime) - parse(inTime)
@@ -56,62 +59,146 @@ export default function EmployeeTodaySheet() {
   const today = todayISO()
   const submitted = status === 'submitted'
   const totalWorkHours = calcWorkHours(clockInTime, clockOutTime)
-useEffect(() => {
-    if (profile?.id && (clockedIn || profile?.role === 'ceo')) {
+  const isCEO = profile?.role === 'ceo'
+
+  useEffect(() => {
+    if (profile?.id && (clockedIn || isCEO)) {
       loadData()
       loadTeamToday()
       loadAnalytics()
     }
   }, [profile?.id, clockedIn])
-useEffect(() => { if (profile?.id && clockedIn) loadAnalytics() }, [analyticsMonth])
+
   useEffect(() => {
-  if (!profile?.id || submitted || (!clockedIn && profile?.role !== 'ceo')) return
-    autoSaveInterval.current = setInterval(() => { if (todaySlots.length > 0 && dailyTaskId) autosave(todaySlots) }, 5000)
+    if (profile?.id && (clockedIn || isCEO)) loadAnalytics()
+  }, [analyticsMonth])
+
+  useEffect(() => {
+    if (!profile?.id || submitted) return
+    if (!clockedIn && !isCEO) return
+    autoSaveInterval.current = setInterval(() => {
+      if (todaySlots.length > 0 && dailyTaskId) autosave(todaySlots)
+    }, 5000)
     return () => clearInterval(autoSaveInterval.current)
   }, [profile?.id, submitted, todaySlots, dailyTaskId, clockedIn])
-  useEffect(() => { return () => { if (spectateTimer.current) clearInterval(spectateTimer.current) } }, [])
-const loadData = async () => {
+
+  useEffect(() => {
+    return () => {
+      if (spectateTimer.current) clearInterval(spectateTimer.current)
+    }
+  }, [])
+
+  const loadData = async () => {
     setLoading(true)
-    // Run all queries in parallel instead of sequentially
     const [slotsRes, taskRes] = await Promise.all([
       supabase.from('user_slots').select('*').eq('user_id', profile.id).order('slot_index', { ascending: true }),
-      supabase.from('daily_tasks').select('*, task_slots(*)').eq('user_id', profile.id).eq('date', today).maybeSingle()
+      supabase.from('daily_tasks').select('*, task_slots(*)').eq('user_id', profile.id).eq('date', today).maybeSingle(),
     ])
-    const slotsData = slotsRes.data || []
+    let slotsData = slotsRes.data || []
     const taskData = taskRes.data
+
+    if (taskData) {
+      setDailyTaskId(taskData.id)
+      setStatus(taskData.status)
+    }
+
+    // Auto-create daily task for CEO if none exists
+    if (!taskData && isCEO) {
+      const { data: newTask } = await supabase.from('daily_tasks').insert({
+        user_id: profile.id, date: today, status: 'draft',
+        clock_in_time: clockInTime || null, clocked_in: clockedIn || false,
+      }).select().single()
+      if (newTask) {
+        setDailyTaskId(newTask.id)
+      }
+    }
+
+    // Auto-create default slots for CEO if none exist
+    if (slotsData.length === 0 && isCEO) {
+      const defaultSlots = [
+        { user_id: profile.id, slot_index: 0, time_slot: '10:00 AM – 11:00 AM' },
+        { user_id: profile.id, slot_index: 1, time_slot: '11:00 AM – 12:00 PM' },
+        { user_id: profile.id, slot_index: 2, time_slot: '12:00 PM – 01:00 PM' },
+        { user_id: profile.id, slot_index: 3, time_slot: '01:00 PM – 02:00 PM' },
+        { user_id: profile.id, slot_index: 4, time_slot: '02:00 PM – 03:00 PM' },
+        { user_id: profile.id, slot_index: 5, time_slot: '03:00 PM – 04:00 PM' },
+        { user_id: profile.id, slot_index: 6, time_slot: '04:00 PM – 05:00 PM' },
+        { user_id: profile.id, slot_index: 7, time_slot: '05:00 PM – 06:00 PM' },
+      ]
+      const { data: newSlots } = await supabase.from('user_slots').insert(defaultSlots).select()
+      if (newSlots) {
+        slotsData = newSlots
+        setUserSlots(newSlots)
+        setTodaySlots(newSlots.map((s) => ({
+          slot_index: s.slot_index, time_slot: s.time_slot,
+          tasks_worked_on: '', days_agenda: '', task_pending: '',
+        })))
+        await loadWeeklyHours()
+        setLoading(false)
+        return
+      }
+    }
+
     setUserSlots(slotsData)
-   loadData = async () => {
-    setLoading(true)
-    const { data: slotsData } = await supabase.from('user_slots').select('*').eq('user_id', profile.id).order('slot_index', { ascending: true })
-    setUserSlots(slotsData || [])
-    const { data: taskData } = await supabase.from('daily_tasks').select('*, task_slots(*)').eq('user_id', profile.id).eq('date', today).maybeSingle()
-    if (taskData) { setDailyTaskId(taskData.id); setStatus(taskData.status) }
-    setTodaySlots((slotsData || []).map((us) => {
+    setTodaySlots(slotsData.map((us) => {
       const found = taskData?.task_slots?.find((ts) => ts.slot_index === us.slot_index)
-      return { slot_index: us.slot_index, time_slot: us.time_slot, tasks_worked_on: found?.tasks_worked_on || '', days_agenda: found?.days_agenda || '', task_pending: found?.task_pending || '' }
+      return {
+        slot_index: us.slot_index,
+        time_slot: us.time_slot,
+        tasks_worked_on: found?.tasks_worked_on || '',
+        days_agenda: found?.days_agenda || '',
+        task_pending: found?.task_pending || '',
+      }
     }))
-    await loadWeeklyHours(); setLoading(false)
+    await loadWeeklyHours()
+    setLoading(false)
   }
 
   const loadAnalytics = async () => {
-    const yr = analyticsMonth.getFullYear(); const mo = analyticsMonth.getMonth()
-    const s = `${yr}-${String(mo+1).padStart(2,'0')}-01`; const ed = new Date(yr,mo+1,0).getDate(); const e = `${yr}-${String(mo+1).padStart(2,'0')}-${ed}`
-    const [t, l] = await Promise.all([
-      supabase.from('daily_tasks').select('*').eq('user_id', profile.id).eq('status', 'submitted').gte('date', s).lte('date', e),
-      supabase.from('leave_requests').select('*').eq('user_id', profile.id).eq('status', 'approved').gte('from_date', s).lte('to_date', e),
-    ]); setMonthTasks(t.data || []); setMonthLeaves(l.data || [])
+    const yr = analyticsMonth.getFullYear()
+    const mo = analyticsMonth.getMonth()
+    const startDate = `${yr}-${String(mo + 1).padStart(2, '0')}-01`
+    const endDay = new Date(yr, mo + 1, 0).getDate()
+    const endDate = `${yr}-${String(mo + 1).padStart(2, '0')}-${endDay}`
+    const [tasksRes, leavesRes] = await Promise.all([
+      supabase.from('daily_tasks').select('*').eq('user_id', profile.id).eq('status', 'submitted').gte('date', startDate).lte('date', endDate),
+      supabase.from('leave_requests').select('*').eq('user_id', profile.id).eq('status', 'approved').gte('from_date', startDate).lte('to_date', endDate),
+    ])
+    setMonthTasks(tasksRes.data || [])
+    setMonthLeaves(leavesRes.data || [])
   }
 
   const loadTeamToday = async () => {
     const { data: users } = await supabase.from('users').select('id, name, avatar_id, designation').eq('active', true).eq('role', 'employee').neq('id', profile.id)
     if (!users?.length) return
-    const { data: tasks } = await supabase.from('daily_tasks').select('user_id, status, clock_in_time, clock_out_time').eq('date', today).in('user_id', users.map(u => u.id))
-    setTeamToday(users.map(u => { const task = tasks?.find(t => t.user_id === u.id); return { ...u, task_status: task?.status || 'not started', clock_in_time: task?.clock_in_time, clock_out_time: task?.clock_out_time } }))
+    const { data: tasks } = await supabase.from('daily_tasks').select('user_id, status, clock_in_time, clock_out_time').eq('date', today).in('user_id', users.map((u) => u.id))
+    setTeamToday(users.map((u) => {
+      const task = tasks?.find((t) => t.user_id === u.id)
+      return { ...u, task_status: task?.status || 'not started', clock_in_time: task?.clock_in_time, clock_out_time: task?.clock_out_time }
+    }))
   }
 
-  const refreshSpectate = async (userId) => { const { data } = await supabase.from('daily_tasks').select('*, task_slots(*)').eq('user_id', userId).eq('date', today).maybeSingle(); setSpectateTask(data); setSpectateSlots(data?.task_slots || []) }
-  const openSpectate = async (user) => { setSpectateUser(user); setSpectateLoading(true); await refreshSpectate(user.id); setSpectateLoading(false); if (spectateTimer.current) clearInterval(spectateTimer.current); spectateTimer.current = setInterval(() => refreshSpectate(user.id), 5000) }
-  const closeSpectate = () => { if (spectateTimer.current) clearInterval(spectateTimer.current); setSpectateUser(null); setSpectateSlots([]); setSpectateTask(null) }
+  const refreshSpectate = async (userId) => {
+    const { data } = await supabase.from('daily_tasks').select('*, task_slots(*)').eq('user_id', userId).eq('date', today).maybeSingle()
+    setSpectateTask(data)
+    setSpectateSlots(data?.task_slots || [])
+  }
+
+  const openSpectate = async (user) => {
+    setSpectateUser(user)
+    setSpectateLoading(true)
+    await refreshSpectate(user.id)
+    setSpectateLoading(false)
+    if (spectateTimer.current) clearInterval(spectateTimer.current)
+    spectateTimer.current = setInterval(() => refreshSpectate(user.id), 5000)
+  }
+
+  const closeSpectate = () => {
+    if (spectateTimer.current) clearInterval(spectateTimer.current)
+    setSpectateUser(null)
+    setSpectateSlots([])
+    setSpectateTask(null)
+  }
 
   const loadWeeklyHours = async () => {
     const monday = getWeekMonday()
@@ -120,42 +207,71 @@ const loadData = async () => {
   }
 
   const autosave = useCallback(async (newSlots) => {
-    if (!profile?.id || status === 'submitted') return; let taskId = dailyTaskId; if (!taskId) return
+    if (!profile?.id || status === 'submitted') return
+    const taskId = dailyTaskId
+    if (!taskId) return
     await supabase.from('task_slots').delete().eq('daily_task_id', taskId)
-    await supabase.from('task_slots').insert(newSlots.map((s) => ({ daily_task_id: taskId, slot_index: s.slot_index, time_slot: s.time_slot, tasks_worked_on: s.tasks_worked_on, days_agenda: s.days_agenda, task_pending: s.task_pending })))
+    await supabase.from('task_slots').insert(newSlots.map((s) => ({
+      daily_task_id: taskId, slot_index: s.slot_index, time_slot: s.time_slot,
+      tasks_worked_on: s.tasks_worked_on, days_agenda: s.days_agenda, task_pending: s.task_pending,
+    })))
   }, [profile?.id, dailyTaskId, status])
 
-  const updateSlot = (si, f, v) => { setTodaySlots(todaySlots.map((s) => s.slot_index === si ? { ...s, [f]: v } : s)) }
+  const updateSlot = (slotIndex, field, value) => {
+    setTodaySlots(todaySlots.map((s) => s.slot_index === slotIndex ? { ...s, [field]: value } : s))
+  }
 
   const handleAddSlot = async (timeStr) => {
-    const ni = userSlots.length > 0 ? Math.max(...userSlots.map((s) => s.slot_index)) + 1 : 0
-    const { data, error } = await supabase.from('user_slots').insert({ user_id: profile.id, slot_index: ni, time_slot: timeStr }).select().single()
+    const newIndex = userSlots.length > 0 ? Math.max(...userSlots.map((s) => s.slot_index)) + 1 : 0
+    const { data, error } = await supabase.from('user_slots').insert({ user_id: profile.id, slot_index: newIndex, time_slot: timeStr }).select().single()
     if (error) { showToast('Failed to add slot', 'error'); return }
-    setUserSlots([...userSlots, data]); setTodaySlots([...todaySlots, { slot_index: ni, time_slot: timeStr, tasks_worked_on: '', days_agenda: '', task_pending: '' }]); showToast('Slot added')
+    setUserSlots([...userSlots, data])
+    setTodaySlots([...todaySlots, { slot_index: newIndex, time_slot: timeStr, tasks_worked_on: '', days_agenda: '', task_pending: '' }])
+    showToast('Slot added')
   }
 
   const handleRemoveSlot = async (slot) => {
-    if (!slot.id) return; await supabase.from('user_slots').delete().eq('id', slot.id)
-    setUserSlots(userSlots.filter((s) => s.id !== slot.id)); setTodaySlots(todaySlots.filter((s) => s.slot_index !== slot.slot_index))
+    if (!slot.id) return
+    await supabase.from('user_slots').delete().eq('id', slot.id)
+    setUserSlots(userSlots.filter((s) => s.id !== slot.id))
+    setTodaySlots(todaySlots.filter((s) => s.slot_index !== slot.slot_index))
     if (dailyTaskId) await supabase.from('task_slots').delete().eq('daily_task_id', dailyTaskId).eq('slot_index', slot.slot_index)
   }
 
   const handleSubmit = async () => {
     if (!todaySlots.some((s) => s.tasks_worked_on?.trim())) { showToast('Please fill at least one time slot', 'error'); return }
-    setSubmitting(true); await autosave(todaySlots)
+    setSubmitting(true)
+    await autosave(todaySlots)
     const totalHours = totalWorkHours || calculateHours(todaySlots)
-    const { error } = await supabase.from('daily_tasks').update({ status: 'submitted', submitted_at: new Date().toISOString(), logoff_time: clockOutTime || null, total_hours: totalHours }).eq('id', dailyTaskId)
+    const { error } = await supabase.from('daily_tasks').update({
+      status: 'submitted', submitted_at: new Date().toISOString(),
+      logoff_time: clockOutTime || null, total_hours: totalHours,
+    }).eq('id', dailyTaskId)
     if (error) { showToast('Failed to submit', 'error'); setSubmitting(false); return }
-    const { data: ceos } = await supabase.from('users').select('id').eq('role', 'ceo').eq('active', true)
-    if (ceos?.length) await supabase.from('notifications').insert(ceos.map((c) => ({ recipient_id: c.id, type: 'task_submitted', message: `${profile.name} submitted daily tasks (${totalHours}h)`, related_id: dailyTaskId })))
-    setStatus('submitted'); showToast(`Day submitted · ${totalHours} hours logged`); setSubmitting(false); loadWeeklyHours(); loadAnalytics()
+    // Notify CEO (skip if current user is CEO)
+    if (!isCEO) {
+      const { data: ceos } = await supabase.from('users').select('id').eq('role', 'ceo').eq('active', true)
+      if (ceos?.length) {
+        await supabase.from('notifications').insert(ceos.map((c) => ({
+          recipient_id: c.id, type: 'task_submitted',
+          message: `${profile.name} submitted daily tasks (${totalHours}h)`, related_id: dailyTaskId,
+        })))
+      }
+    }
+    setStatus('submitted')
+    showToast(`Day submitted · ${totalHours} hours logged`)
+    setSubmitting(false)
+    loadWeeklyHours()
+    loadAnalytics()
   }
 
   const handleRevert = async () => {
     setReverting(true)
     const { error } = await supabase.from('daily_tasks').update({ status: 'draft', submitted_at: null, total_hours: null }).eq('id', dailyTaskId)
     if (error) { showToast('Failed to revert', 'error'); setReverting(false); return }
-    setStatus('draft'); showToast('Reverted to draft'); setReverting(false)
+    setStatus('draft')
+    showToast('Reverted to draft')
+    setReverting(false)
   }
 
   if (loading) return <Loader label="Loading today's sheet" />
@@ -163,18 +279,47 @@ const loadData = async () => {
   const todayHours = calculateHours(todaySlots)
   const filledCount = todaySlots.filter((s) => s.tasks_worked_on?.trim()).length
 
-  const aYear = analyticsMonth.getFullYear(); const aMonth = analyticsMonth.getMonth()
+  const aYear = analyticsMonth.getFullYear()
+  const aMonth = analyticsMonth.getMonth()
   const aMonthName = analyticsMonth.toLocaleString('default', { month: 'long' })
   const aDaysInMonth = new Date(aYear, aMonth + 1, 0).getDate()
-  const countWD = () => { const td = new Date(); let c = 0; for (let d = 1; d <= aDaysInMonth; d++) { const dt = new Date(aYear, aMonth, d); if (dt > td) break; const dy = dt.getDay(); if (dy !== 0 && dy !== 6) c++ } return c }
+  const countWD = () => {
+    const td = new Date(); let c = 0
+    for (let d = 1; d <= aDaysInMonth; d++) {
+      const dt = new Date(aYear, aMonth, d); if (dt > td) break
+      const dy = dt.getDay(); if (dy !== 0 && dy !== 6) c++
+    }
+    return c
+  }
   const workingDays = countWD()
   const daysSubmitted = monthTasks.length
   const attendanceRate = workingDays > 0 ? Math.round((daysSubmitted / workingDays) * 100) : 0
   const totalMonthHours = monthTasks.reduce((s, t) => s + parseFloat(t.total_hours || 0), 0)
   const leavesTaken = monthLeaves.reduce((s, l) => s + (l.days_requested || 0), 0)
-  const dailyHoursData = (() => { const data = []; const td = new Date(); for (let d = 1; d <= aDaysInMonth; d++) { const dt = new Date(aYear, aMonth, d); if (dt > td) break; if (dt.getDay() === 0 || dt.getDay() === 6) continue; const ds = `${aYear}-${String(aMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; const task = monthTasks.find(t => t.date === ds); data.push({ day: d, hours: task ? Math.round(parseFloat(task.total_hours || 0) * 10) / 10 : 0 }) } return data })()
-  const weeklyHoursData = (() => { const w = []; let ws = 1; while (ws <= aDaysInMonth) { const we = Math.min(ws+6, aDaysInMonth); const hrs = monthTasks.filter(t => { const dy = parseInt(t.date.split('-')[2]); return dy >= ws && dy <= we }).reduce((s, t) => s + parseFloat(t.total_hours || 0), 0); w.push({ week: `${ws}-${we}`, hours: Math.round(hrs * 10) / 10 }); ws += 7 } return w })()
-  const attendanceDonut = [{ name: 'Present', value: daysSubmitted, color: '#C5F542' }, { name: 'Absent', value: Math.max(0, workingDays - daysSubmitted - leavesTaken), color: '#E5E5E5' }, { name: 'Leave', value: leavesTaken, color: '#F59E0B' }].filter(d => d.value > 0)
+  const dailyHoursData = (() => {
+    const data = []; const td = new Date()
+    for (let d = 1; d <= aDaysInMonth; d++) {
+      const dt = new Date(aYear, aMonth, d); if (dt > td) break; if (dt.getDay() === 0 || dt.getDay() === 6) continue
+      const ds = `${aYear}-${String(aMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      const task = monthTasks.find((t) => t.date === ds)
+      data.push({ day: d, hours: task ? Math.round(parseFloat(task.total_hours || 0) * 10) / 10 : 0 })
+    }
+    return data
+  })()
+  const weeklyHoursData = (() => {
+    const weeks = []; let ws = 1
+    while (ws <= aDaysInMonth) {
+      const we = Math.min(ws + 6, aDaysInMonth)
+      const hrs = monthTasks.filter((t) => { const dy = parseInt(t.date.split('-')[2]); return dy >= ws && dy <= we }).reduce((s, t) => s + parseFloat(t.total_hours || 0), 0)
+      weeks.push({ week: `${ws}-${we}`, hours: Math.round(hrs * 10) / 10 }); ws += 7
+    }
+    return weeks
+  })()
+  const attendanceDonut = [
+    { name: 'Present', value: daysSubmitted, color: '#C5F542' },
+    { name: 'Absent', value: Math.max(0, workingDays - daysSubmitted - leavesTaken), color: '#E5E5E5' },
+    { name: 'Leave', value: leavesTaken, color: '#F59E0B' },
+  ].filter((d) => d.value > 0)
 
   const mobileTabField = mobileTab === 'tasks' ? 'tasks_worked_on' : mobileTab === 'agenda' ? 'days_agenda' : 'task_pending'
   const mobileTabPlaceholder = mobileTab === 'tasks' ? 'What did you work on?' : '—'
@@ -272,7 +417,8 @@ const loadData = async () => {
           </thead>
           <tbody>
             {todaySlots.map((slot, idx) => (
-<tr key={slot.slot_index} className={`group ${idx % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}>                <td className="border-r border-black/[0.06] align-top p-0">
+              <tr key={slot.slot_index} className={`group ${idx % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}>
+                <td className="border-r border-black/[0.06] align-top p-0">
                   <div className="px-3 py-1.5 bg-black/[0.04] border-b border-black/[0.06] flex items-center justify-between">
                     <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
                     {!submitted && todaySlots.length > 1 && (
@@ -301,7 +447,7 @@ const loadData = async () => {
       {/* Mobile Tabs */}
       <div className="md:hidden mb-6">
         <div className="flex bg-black rounded-t-xl overflow-hidden">
-          {[{ key: 'tasks', label: 'Tasks' }, { key: 'agenda', label: 'Agenda' }, { key: 'pending', label: 'Pending' }].map(tab => (
+          {[{ key: 'tasks', label: 'Tasks' }, { key: 'agenda', label: 'Agenda' }, { key: 'pending', label: 'Pending' }].map((tab) => (
             <button key={tab.key} onClick={() => setMobileTab(tab.key)}
               className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center transition-colors ${mobileTab === tab.key ? 'bg-white/10 text-[#C5F542]' : 'text-white/40'}`}>
               {tab.label}
@@ -310,7 +456,9 @@ const loadData = async () => {
         </div>
         {mobileTab === 'tasks' && !submitted && (
           <div className="flex justify-end p-2 bg-black/[0.03] border-x border-black/[0.06]">
-            <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-black/10 px-2 py-1 rounded flex items-center gap-1"><Settings className="w-3 h-3" strokeWidth={2} />Slots</button>
+            <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-black/10 px-2 py-1 rounded flex items-center gap-1">
+              <Settings className="w-3 h-3" strokeWidth={2} />Slots
+            </button>
           </div>
         )}
         <div className="border border-t-0 border-black/[0.06] rounded-b-xl overflow-hidden divide-y divide-black/[0.06]">
@@ -318,7 +466,11 @@ const loadData = async () => {
             <div key={slot.slot_index}>
               <div className="flex items-center justify-between px-3 py-2 bg-black/[0.03] border-b border-black/[0.06]">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
-                {mobileTab === 'tasks' && !submitted && todaySlots.length > 1 && <button onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))} className="text-black/30"><Trash2 className="w-3 h-3" /></button>}
+                {mobileTab === 'tasks' && !submitted && todaySlots.length > 1 && (
+                  <button onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))} className="text-black/30">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
               </div>
               <textarea disabled={submitted} value={slot[mobileTabField]} onChange={(e) => updateSlot(slot.slot_index, mobileTabField, e.target.value)} className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none" rows={3} placeholder={mobileTabPlaceholder} />
             </div>
@@ -366,7 +518,9 @@ const loadData = async () => {
       <div className="border-t border-black/[0.06] pt-6 mt-4">
         <button onClick={() => setShowAnalytics(!showAnalytics)} className="flex items-center justify-between w-full mb-4 group">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-black/5 flex items-center justify-center"><BarChart3 className="w-4 h-4 text-black/40" strokeWidth={1.8} /></div>
+            <div className="w-7 h-7 rounded-lg bg-black/5 flex items-center justify-center">
+              <BarChart3 className="w-4 h-4 text-black/40" strokeWidth={1.8} />
+            </div>
             <span className="text-xs uppercase tracking-widest font-semibold text-black/40">My analytics</span>
           </div>
           <ChevronDown className={`w-4 h-4 text-black/20 transition-transform ${showAnalytics ? 'rotate-180' : ''}`} strokeWidth={2} />
@@ -418,7 +572,12 @@ const loadData = async () => {
                 ) : (
                   <ResponsiveContainer width="100%" height={200}>
                     <BarChart data={dailyHoursData}>
-                      <defs><linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#C5F542" /><stop offset="100%" stopColor="#a8d935" /></linearGradient></defs>
+                      <defs>
+                        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#C5F542" />
+                          <stop offset="100%" stopColor="#a8d935" />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#999' }} axisLine={{ stroke: '#eee' }} />
                       <YAxis tick={{ fontSize: 10, fill: '#999' }} axisLine={{ stroke: '#eee' }} />
@@ -430,7 +589,7 @@ const loadData = async () => {
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-black/[0.06] p-5">
                 <h4 className="text-xs uppercase tracking-widest font-semibold text-black/40 mb-4">Weekly hours</h4>
-                {weeklyHoursData.every(w => w.hours === 0) ? (
+                {weeklyHoursData.every((w) => w.hours === 0) ? (
                   <div className="flex flex-col items-center justify-center h-[200px] text-black/20">
                     <TrendingUp className="w-8 h-8 mb-2" strokeWidth={1} />
                     <span className="text-sm">No hours logged yet</span>
