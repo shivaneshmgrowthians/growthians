@@ -50,6 +50,13 @@ export default function CEOApprovals() {
         .select('*, users(name, designation, avatar_id)')
         .order('created_at', { ascending: false }),
     ])
+
+    // DEBUG LOGS
+    console.log('Leaves Data:', leavesRes.data)
+    console.log('Leaves Error:', leavesRes.error)
+    console.log('Logoffs Data:', logoffsRes.data)
+    console.log('Logoffs Error:', logoffsRes.error)
+
     setLeaves(leavesRes.data || [])
     setLogoffs(logoffsRes.data || [])
     setComps(compsRes.data || [])
