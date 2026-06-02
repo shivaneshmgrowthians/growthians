@@ -35,19 +35,18 @@ export default function CEOApprovals() {
   }, [profile?.id])
 
   const loadData = async () => {
-    setLoading(true)
-    const [leavesRes, logoffsRes, compsRes] = await Promise.all([
+  const [leavesRes, logoffsRes, compsRes] = await Promise.all([
       supabase
         .from('leave_requests')
-        .select('*, users(name, designation, avatar_id, leave_balance)')
+        .select('*, users!leave_requests_user_id_fkey(name, designation, avatar_id, leave_balance)')
         .order('created_at', { ascending: false }),
       supabase
         .from('logoff_requests')
-        .select('*, users(name, designation, avatar_id)')
+        .select('*, users!logoff_requests_user_id_fkey(name, designation, avatar_id)')
         .order('created_at', { ascending: false }),
       supabase
         .from('compensatory_dates')
-        .select('*, users(name, designation, avatar_id)')
+        .select('*, users!compensatory_dates_user_id_fkey(name, designation, avatar_id)')
         .order('created_at', { ascending: false }),
     ])
 
