@@ -51,7 +51,7 @@ export const timeToMinutes = (timeStr) => {
 // Calculate hours from a list of slots that have content
 export const calculateHours = (slots) => {
   if (!slots) return '0.0'
-  const filledSlots = slots.filter((s) => s.tasks_worked_on && s.tasks_worked_on.trim())
+ const filledSlots = slots.filter((s) => !s.is_lunch && s.tasks_worked_on && s.tasks_worked_on.trim())
   let totalMinutes = 0
   filledSlots.forEach((slot) => {
     const match = slot.time_slot.match(/(\d+):(\d+)\s*(AM|PM).*?(\d+):(\d+)\s*(AM|PM)/i)
