@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import {
-  Send, Settings, Trash2, CheckCircle2, Clock, Timer, TrendingUp, ListTodo, Undo2, Eye, ChevronRight, ChevronDown, BarChart3,
+  Send, Settings, Trash2, CheckCircle2, Clock, Timer, TrendingUp, ListTodo, Undo2, Eye, ChevronRight, ChevronDown, BarChart3, Coffee,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { todayISO, formatDateLong, calculateHours, getWeekMonday } from '../lib/helpers'
@@ -50,16 +50,43 @@ export default function EmployeeTodaySheet() {
   const [spectateLoading, setSpectateLoading] = useState(false)
   const [mobileTab, setMobileTab] = useState('tasks')
   const [showAnalytics, setShowAnalytics] = useState(false)
-  const autoSaveInterval = useRef(null)
-  const spectateTimer = useRef(null)
   const [analyticsMonth, setAnalyticsMonth] = useState(new Date())
   const [monthTasks, setMonthTasks] = useState([])
   const [monthLeaves, setMonthLeaves] = useState([])
+
+  // Undo history stack
+  const [undoStack, setUndoStack] = useState([])
+
+  const autoSaveInterval = useRef(null)
+  const spectateTimer = useRef(null)
 
   const today = todayISO()
   const submitted = status === 'submitted'
   const totalWorkHours = calcWorkHours(clockInTime, clockOutTime)
   const isCEO = profile?.role === 'ceo'
+
+  // Push current state to undo stack before making changes
+  const pushUndo = useCallback((slots) => {
+    setUndoStack((prev) => [...prev.slice(-19), JSON.parse(JSON.stringify(slots))])
+  }, [])
+
+  // Ctrl+Z handler
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !submitted) {
+        e.preventDefault()
+        setUndoStack((prev) => {
+          if (prev.length === 0) return prev
+          const last = prev[prev.length - 1]
+          setTodaySlots(last)
+          showToast('Undone ↩')
+          return prev.slice(0, -1)
+        })
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [submitted, showToast])
 
   useEffect(() => {
     if (profile?.id && (clockedIn || isCEO)) {
@@ -88,6 +115,26 @@ export default function EmployeeTodaySheet() {
     }
   }, [])
 
+  // ─── DAILY RESET: check if slots were last updated on a previous day ───
+  const checkAndResetSlots = async (slotsData, taskData) => {
+    const lastDate = localStorage.getItem(`axis_slots_date_${profile.id}`)
+    if (lastDate && lastDate !== today) {
+      // Reset task content for today but keep slot structure
+      const resetSlots = slotsData.map((us) => ({
+        slot_index: us.slot_index,
+        time_slot: us.time_slot,
+        is_lunch: us.is_lunch || false,
+        tasks_worked_on: '',
+        days_agenda: '',
+        task_pending: '',
+      }))
+      localStorage.setItem(`axis_slots_date_${profile.id}`, today)
+      return resetSlots
+    }
+    localStorage.setItem(`axis_slots_date_${profile.id}`, today)
+    return null
+  }
+
   const loadData = async () => {
     setLoading(true)
     const [slotsRes, taskRes] = await Promise.all([
@@ -108,31 +155,30 @@ export default function EmployeeTodaySheet() {
         user_id: profile.id, date: today, status: 'draft',
         clock_in_time: clockInTime || null, clocked_in: clockedIn || false,
       }).select().single()
-      if (newTask) {
-        setDailyTaskId(newTask.id)
-      }
+      if (newTask) setDailyTaskId(newTask.id)
     }
 
-    // Auto-create default slots for CEO if none exist
+    // Auto-create default slots if none exist
     if (slotsData.length === 0 && isCEO) {
       const defaultSlots = [
-        { user_id: profile.id, slot_index: 0, time_slot: '10:00 AM – 11:00 AM' },
-        { user_id: profile.id, slot_index: 1, time_slot: '11:00 AM – 12:00 PM' },
-        { user_id: profile.id, slot_index: 2, time_slot: '12:00 PM – 01:00 PM' },
-        { user_id: profile.id, slot_index: 3, time_slot: '01:00 PM – 02:00 PM' },
-        { user_id: profile.id, slot_index: 4, time_slot: '02:00 PM – 03:00 PM' },
-        { user_id: profile.id, slot_index: 5, time_slot: '03:00 PM – 04:00 PM' },
-        { user_id: profile.id, slot_index: 6, time_slot: '04:00 PM – 05:00 PM' },
-        { user_id: profile.id, slot_index: 7, time_slot: '05:00 PM – 06:00 PM' },
+        { user_id: profile.id, slot_index: 0, time_slot: '10:00 AM – 11:00 AM', is_lunch: false },
+        { user_id: profile.id, slot_index: 1, time_slot: '11:00 AM – 12:00 PM', is_lunch: false },
+        { user_id: profile.id, slot_index: 2, time_slot: '12:00 PM – 01:00 PM', is_lunch: false },
+        { user_id: profile.id, slot_index: 3, time_slot: '01:00 PM – 02:00 PM', is_lunch: false },
+        { user_id: profile.id, slot_index: 4, time_slot: '02:00 PM – 03:00 PM', is_lunch: false },
+        { user_id: profile.id, slot_index: 5, time_slot: '03:00 PM – 04:00 PM', is_lunch: false },
+        { user_id: profile.id, slot_index: 6, time_slot: '04:00 PM – 05:00 PM', is_lunch: false },
+        { user_id: profile.id, slot_index: 7, time_slot: '05:00 PM – 06:00 PM', is_lunch: false },
       ]
       const { data: newSlots } = await supabase.from('user_slots').insert(defaultSlots).select()
       if (newSlots) {
         slotsData = newSlots
         setUserSlots(newSlots)
         setTodaySlots(newSlots.map((s) => ({
-          slot_index: s.slot_index, time_slot: s.time_slot,
+          slot_index: s.slot_index, time_slot: s.time_slot, is_lunch: false,
           tasks_worked_on: '', days_agenda: '', task_pending: '',
         })))
+        localStorage.setItem(`axis_slots_date_${profile.id}`, today)
         await loadWeeklyHours()
         setLoading(false)
         return
@@ -140,16 +186,26 @@ export default function EmployeeTodaySheet() {
     }
 
     setUserSlots(slotsData)
-    setTodaySlots(slotsData.map((us) => {
-      const found = taskData?.task_slots?.find((ts) => ts.slot_index === us.slot_index)
-      return {
-        slot_index: us.slot_index,
-        time_slot: us.time_slot,
-        tasks_worked_on: found?.tasks_worked_on || '',
-        days_agenda: found?.days_agenda || '',
-        task_pending: found?.task_pending || '',
-      }
-    }))
+
+    // Check daily reset
+    const resetSlots = await checkAndResetSlots(slotsData, taskData)
+    if (resetSlots) {
+      setTodaySlots(resetSlots)
+      showToast('Slots reset for today 🌅')
+    } else {
+      setTodaySlots(slotsData.map((us) => {
+        const found = taskData?.task_slots?.find((ts) => ts.slot_index === us.slot_index)
+        return {
+          slot_index: us.slot_index,
+          time_slot: us.time_slot,
+          is_lunch: us.is_lunch || false,
+          tasks_worked_on: found?.tasks_worked_on || '',
+          days_agenda: found?.days_agenda || '',
+          task_pending: found?.task_pending || '',
+        }
+      }))
+    }
+
     await loadWeeklyHours()
     setLoading(false)
   }
@@ -218,24 +274,67 @@ export default function EmployeeTodaySheet() {
   }, [profile?.id, dailyTaskId, status])
 
   const updateSlot = (slotIndex, field, value) => {
+    pushUndo(todaySlots)
     setTodaySlots(todaySlots.map((s) => s.slot_index === slotIndex ? { ...s, [field]: value } : s))
   }
 
   const handleAddSlot = async (timeStr) => {
     const newIndex = userSlots.length > 0 ? Math.max(...userSlots.map((s) => s.slot_index)) + 1 : 0
-    const { data, error } = await supabase.from('user_slots').insert({ user_id: profile.id, slot_index: newIndex, time_slot: timeStr }).select().single()
+    const { data, error } = await supabase.from('user_slots').insert({ user_id: profile.id, slot_index: newIndex, time_slot: timeStr, is_lunch: false }).select().single()
     if (error) { showToast('Failed to add slot', 'error'); return }
     setUserSlots([...userSlots, data])
-    setTodaySlots([...todaySlots, { slot_index: newIndex, time_slot: timeStr, tasks_worked_on: '', days_agenda: '', task_pending: '' }])
+    setTodaySlots([...todaySlots, { slot_index: newIndex, time_slot: timeStr, is_lunch: false, tasks_worked_on: '', days_agenda: '', task_pending: '' }])
     showToast('Slot added')
   }
 
   const handleRemoveSlot = async (slot) => {
     if (!slot.id) return
+    pushUndo(todaySlots)
     await supabase.from('user_slots').delete().eq('id', slot.id)
     setUserSlots(userSlots.filter((s) => s.id !== slot.id))
     setTodaySlots(todaySlots.filter((s) => s.slot_index !== slot.slot_index))
     if (dailyTaskId) await supabase.from('task_slots').delete().eq('daily_task_id', dailyTaskId).eq('slot_index', slot.slot_index)
+  }
+
+  // ─── REORDER SLOTS (drag) ───
+  const handleReorderSlots = async (reordered) => {
+    pushUndo(todaySlots)
+    const updated = reordered.map((s, idx) => ({ ...s, slot_index: idx }))
+    setUserSlots(updated)
+    setTodaySlots((prev) => {
+      const contentMap = {}
+      prev.forEach((s) => { contentMap[s.slot_index] = s })
+      return updated.map((s, idx) => {
+        const old = reordered[idx]
+        const content = contentMap[old.slot_index] || {}
+        return { slot_index: idx, time_slot: s.time_slot, is_lunch: s.is_lunch || false, tasks_worked_on: content.tasks_worked_on || '', days_agenda: content.days_agenda || '', task_pending: content.task_pending || '' }
+      })
+    })
+    // Persist new order to DB
+    for (const s of updated) {
+      if (s.id) await supabase.from('user_slots').update({ slot_index: s.slot_index }).eq('id', s.id)
+    }
+    showToast('Slots reordered')
+  }
+
+  // ─── TOGGLE LUNCH ───
+  const handleToggleLunch = async (slot) => {
+    if (!slot.id) return
+    const newVal = !slot.is_lunch
+    await supabase.from('user_slots').update({ is_lunch: newVal }).eq('id', slot.id)
+    setUserSlots(userSlots.map((s) => s.id === slot.id ? { ...s, is_lunch: newVal } : s))
+    setTodaySlots(todaySlots.map((s) => s.slot_index === slot.slot_index ? { ...s, is_lunch: newVal } : s))
+    showToast(newVal ? '☕ Marked as lunch break' : 'Lunch break removed')
+  }
+
+  // ─── EDIT SLOT TIME ───
+  const handleEditSlotTime = async (slot, newTimeStr) => {
+    if (!slot.id) return
+    pushUndo(todaySlots)
+    await supabase.from('user_slots').update({ time_slot: newTimeStr }).eq('id', slot.id)
+    setUserSlots(userSlots.map((s) => s.id === slot.id ? { ...s, time_slot: newTimeStr } : s))
+    setTodaySlots(todaySlots.map((s) => s.slot_index === slot.slot_index ? { ...s, time_slot: newTimeStr } : s))
+    showToast('Time updated')
   }
 
   const handleSubmit = async () => {
@@ -248,7 +347,6 @@ export default function EmployeeTodaySheet() {
       logoff_time: clockOutTime || null, total_hours: totalHours,
     }).eq('id', dailyTaskId)
     if (error) { showToast('Failed to submit', 'error'); setSubmitting(false); return }
-    // Notify CEO (skip if current user is CEO)
     if (!isCEO) {
       const { data: ceos } = await supabase.from('users').select('id').eq('role', 'ceo').eq('active', true)
       if (ceos?.length) {
@@ -326,16 +424,27 @@ export default function EmployeeTodaySheet() {
 
   return (
     <div>
-      <PageHeader eyebrow={formatDateLong(today)} title="Today's Sheet" subtitle="Auto-saves every 5 seconds."
+      <PageHeader eyebrow={formatDateLong(today)} title="Today's Sheet" subtitle="Auto-saves every 5 seconds · Ctrl+Z to undo"
         action={
           <div className="flex items-center gap-2">
-            {submitted && <Button variant="secondary" onClick={handleRevert} disabled={reverting}><Undo2 className="w-4 h-4" strokeWidth={2} />{reverting ? 'Reverting...' : 'Undo'}</Button>}
+            {undoStack.length > 0 && !submitted && (
+              <Button variant="secondary" onClick={() => {
+                setUndoStack((prev) => {
+                  if (prev.length === 0) return prev
+                  const last = prev[prev.length - 1]
+                  setTodaySlots(last)
+                  showToast('Undone ↩')
+                  return prev.slice(0, -1)
+                })
+              }}><Undo2 className="w-4 h-4" strokeWidth={2} />Undo</Button>
+            )}
+            {submitted && <Button variant="secondary" onClick={handleRevert} disabled={reverting}><Undo2 className="w-4 h-4" strokeWidth={2} />{reverting ? 'Reverting...' : 'Revert'}</Button>}
             {!submitted && <Button variant="primary" onClick={handleSubmit} disabled={submitting}><Send className="w-4 h-4" strokeWidth={2} />{submitting ? 'Submitting...' : 'Submit'}</Button>}
           </div>
         }
       />
 
-      {/* Stat Cards - Glassmorphism */}
+      {/* Stat Cards */}
       <div className="rounded-xl p-5 mb-6" style={{ background: 'linear-gradient(135deg, #111 0%, #1a1a2e 100%)' }}>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="p-4 rounded-xl relative overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -417,10 +526,17 @@ export default function EmployeeTodaySheet() {
           </thead>
           <tbody>
             {todaySlots.map((slot, idx) => (
-              <tr key={slot.slot_index} className={`group ${idx % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}>
+              <tr key={slot.slot_index} className={`group ${slot.is_lunch ? 'bg-amber-50' : idx % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}>
                 <td className="border-r border-black/[0.06] align-top p-0">
                   <div className="px-3 py-1.5 bg-black/[0.04] border-b border-black/[0.06] flex items-center justify-between">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
+                      {slot.is_lunch && (
+                        <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
+                          <Coffee className="w-2.5 h-2.5" /> Lunch
+                        </span>
+                      )}
+                    </div>
                     {!submitted && todaySlots.length > 1 && (
                       <button onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))} className="opacity-0 group-hover:opacity-100 text-black/20 hover:text-red-500 transition-all">
                         <Trash2 className="w-3 h-3" />
@@ -429,14 +545,24 @@ export default function EmployeeTodaySheet() {
                   </div>
                   <div className="relative">
                     {slot.tasks_worked_on?.trim() && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#C5F542]" />}
-                    <textarea disabled={submitted} value={slot.tasks_worked_on} onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[70px]" placeholder="What did you work on?" />
+                    {slot.is_lunch ? (
+                      <div className="px-3 py-4 text-sm text-amber-400 italic flex items-center gap-2">
+                        <Coffee className="w-4 h-4" /> Lunch Break
+                      </div>
+                    ) : (
+                      <textarea disabled={submitted} value={slot.tasks_worked_on} onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[70px]" placeholder="What did you work on?" />
+                    )}
                   </div>
                 </td>
                 <td className="border-r border-black/[0.06] align-top p-0">
-                  <textarea disabled={submitted} value={slot.days_agenda} onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
+                  {slot.is_lunch ? <div className="min-h-[96px]" /> : (
+                    <textarea disabled={submitted} value={slot.days_agenda} onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
+                  )}
                 </td>
                 <td className="align-top p-0">
-                  <textarea disabled={submitted} value={slot.task_pending} onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
+                  {slot.is_lunch ? <div className="min-h-[96px]" /> : (
+                    <textarea disabled={submitted} value={slot.task_pending} onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
+                  )}
                 </td>
               </tr>
             ))}
@@ -463,16 +589,25 @@ export default function EmployeeTodaySheet() {
         )}
         <div className="border border-t-0 border-black/[0.06] rounded-b-xl overflow-hidden divide-y divide-black/[0.06]">
           {todaySlots.map((slot) => (
-            <div key={slot.slot_index}>
+            <div key={slot.slot_index} className={slot.is_lunch ? 'bg-amber-50' : ''}>
               <div className="flex items-center justify-between px-3 py-2 bg-black/[0.03] border-b border-black/[0.06]">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
+                  {slot.is_lunch && <Coffee className="w-3 h-3 text-amber-500" />}
+                </div>
                 {mobileTab === 'tasks' && !submitted && todaySlots.length > 1 && (
                   <button onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))} className="text-black/30">
                     <Trash2 className="w-3 h-3" />
                   </button>
                 )}
               </div>
-              <textarea disabled={submitted} value={slot[mobileTabField]} onChange={(e) => updateSlot(slot.slot_index, mobileTabField, e.target.value)} className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none" rows={3} placeholder={mobileTabPlaceholder} />
+              {slot.is_lunch ? (
+                <div className="px-3 py-4 text-sm text-amber-400 italic flex items-center gap-2">
+                  <Coffee className="w-4 h-4" /> Lunch Break
+                </div>
+              ) : (
+                <textarea disabled={submitted} value={slot[mobileTabField]} onChange={(e) => updateSlot(slot.slot_index, mobileTabField, e.target.value)} className="w-full px-3 py-3 text-sm bg-white focus:outline-none disabled:text-black resize-none" rows={3} placeholder={mobileTabPlaceholder} />
+              )}
             </div>
           ))}
         </div>
@@ -659,7 +794,17 @@ export default function EmployeeTodaySheet() {
         </Modal>
       )}
 
-      {showSlotsModal && <SlotsManagerModal slots={userSlots} onAddSlot={handleAddSlot} onRemoveSlot={handleRemoveSlot} onClose={() => setShowSlotsModal(false)} />}
+      {showSlotsModal && (
+        <SlotsManagerModal
+          slots={userSlots}
+          onAddSlot={handleAddSlot}
+          onRemoveSlot={handleRemoveSlot}
+          onReorderSlots={handleReorderSlots}
+          onToggleLunch={handleToggleLunch}
+          onEditSlotTime={handleEditSlotTime}
+          onClose={() => setShowSlotsModal(false)}
+        />
+      )}
     </div>
   )
 }
