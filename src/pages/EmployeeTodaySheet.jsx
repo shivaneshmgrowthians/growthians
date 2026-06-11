@@ -758,19 +758,28 @@ export default function EmployeeTodaySheet() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="space-y-3">
-                    {attendanceDonut.map((d, i) => (
-                      <div key={i} className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: d.color }} />
-                        <span className="text-sm text-black/60">{d.name}: <strong className="text-black">{d.value}d</strong></span>
+                  {attendanceDonut.map((d, i) => (
+                      <div key={i}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: d.color }} />
+                          <span className="text-sm text-black/60">{d.name}: <strong className="text-black">{d.value}d</strong></span>
+                        </div>
+                        {d.name === 'Leave' && monthLeaves.length > 0 && (
+                          <div className="ml-6 mt-1.5 space-y-1">
+                            {monthLeaves.map((l, li) => (
+                              <div key={li} className="text-xs text-black/50 flex items-center gap-1.5">
+                                <div className="w-1 h-1 rounded-full bg-[#F59E0B] flex-shrink-0" />
+                                {l.from_date === l.to_date
+                                  ? new Date(l.from_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                                  : `${new Date(l.from_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} → ${new Date(l.to_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                                }
+                                <span className="text-black/30">· {l.days_requested}d</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Spectate Modal */}
       {spectateUser && (
