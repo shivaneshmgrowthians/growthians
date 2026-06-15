@@ -23,6 +23,7 @@ export default function EmployeeLists() {
   const [todos, setTodos] = useState([])
   const [todoInput, setTodoInput] = useState('')
   const [loading, setLoading] = useState(true)
+  const [notepadContent, setNotepadContent] = useState('')
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [pickerPos, setPickerPos] = useState({ top: 0, left: 0 })
   const [savedRange, setSavedRange] = useState(null)
@@ -35,6 +36,13 @@ export default function EmployeeLists() {
   useEffect(() => {
     if (profile?.id) loadData()
   }, [profile?.id])
+
+  // Set notepad content AFTER loading is done and ref is mounted
+  useEffect(() => {
+    if (!loading && notepadRef.current && notepadContent) {
+      notepadRef.current.innerHTML = notepadContent
+    }
+  }, [loading, notepadContent])
 
   // Close color picker on outside click
   useEffect(() => {
@@ -54,11 +62,7 @@ export default function EmployeeLists() {
       supabase.from('notepads').select('content').eq('user_id', profile.id).maybeSingle(),
     ])
     setTodos(todosRes.data || [])
-
-    // Load HTML content into contentEditable
-    if (notepadRef.current) {
-      notepadRef.current.innerHTML = notepadRes.data?.content || ''
-    }
+    setNotepadContent(notepadRes.data?.content || '')
     setLoading(false)
   }
 
@@ -100,25 +104,22 @@ export default function EmployeeLists() {
   }
 
   // Show color picker on text selection
-  const handleMouseUp = (e) => {
+  const handleMouseUp = () => {
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed || !selection.toString().trim()) {
       setShowColorPicker(false)
       return
     }
-    // Check selection is inside notepad
     if (!notepadRef.current?.contains(selection.anchorNode)) return
 
-    // Save range for later use
     const range = selection.getRangeAt(0)
     setSavedRange(range.cloneRange())
 
-    // Position picker near selection
     const rect = range.getBoundingClientRect()
     const notepadRect = notepadRef.current.getBoundingClientRect()
     setPickerPos({
-      top: rect.top - notepadRect.top - 48,
-      left: Math.min(rect.left - notepadRect.left, notepadRect.width - 240),
+      top: rect.top - notepadRect.top - 52,
+      left: Math.min(Math.max(0, rect.left - notepadRect.left), notepadRect.width - 244),
     })
     setShowColorPicker(true)
   }
@@ -128,17 +129,10 @@ export default function EmployeeLists() {
     const selection = window.getSelection()
     selection.removeAllRanges()
     selection.addRange(savedRange)
-
-    // Remove existing highlight spans in selection first
-    document.execCommand('removeFormat', false, null)
-
-    // Apply highlight using execCommand for background color
     document.execCommand('hiliteColor', false, color)
-
     setShowColorPicker(false)
     setSavedRange(null)
     selection.removeAllRanges()
-
     if (notepadRef.current) saveNotepad(notepadRef.current.innerHTML)
   }
 
@@ -230,7 +224,7 @@ export default function EmployeeLists() {
               <div
                 ref={colorPickerRef}
                 className="absolute z-50 bg-white border border-black/15 shadow-xl p-2 rounded-lg"
-                style={{ top: pickerPos.top, left: Math.max(4, pickerPos.left) }}
+                style={{ top: pickerPos.top, left: pickerPos.left }}
               >
                 <div className="text-[9px] uppercase tracking-widest text-black/40 font-semibold mb-2 px-1">Highlight color</div>
                 <div className="flex gap-1.5 flex-wrap" style={{ maxWidth: 220 }}>
@@ -243,7 +237,6 @@ export default function EmployeeLists() {
                       style={{ background: c.value }}
                     />
                   ))}
-                  {/* Remove highlight */}
                   <button
                     title="Remove highlight"
                     onMouseDown={(e) => { e.preventDefault(); removeHighlight() }}
@@ -262,8 +255,7 @@ export default function EmployeeLists() {
               suppressContentEditableWarning
               onInput={handleNotepadInput}
               onMouseUp={handleMouseUp}
-              onKeyUp={(e) => {
-                // Hide picker on keyboard navigation
+              onKeyUp={() => {
                 const sel = window.getSelection()
                 if (!sel || sel.isCollapsed) setShowColorPicker(false)
               }}

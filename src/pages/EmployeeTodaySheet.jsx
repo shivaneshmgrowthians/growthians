@@ -15,6 +15,18 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts'
 
+// Default slots structure starting from 10 AM
+const DEFAULT_SLOTS = [
+  { slot_index: 0, time_slot: '10:00 AM – 11:00 AM', is_lunch: false },
+  { slot_index: 1, time_slot: '11:00 AM – 12:00 PM', is_lunch: false },
+  { slot_index: 2, time_slot: '12:00 PM – 01:00 PM', is_lunch: false },
+  { slot_index: 3, time_slot: '01:00 PM – 02:00 PM', is_lunch: false },
+  { slot_index: 4, time_slot: '02:00 PM – 03:00 PM', is_lunch: false },
+  { slot_index: 5, time_slot: '03:00 PM – 04:00 PM', is_lunch: false },
+  { slot_index: 6, time_slot: '04:00 PM – 05:00 PM', is_lunch: false },
+  { slot_index: 7, time_slot: '05:00 PM – 06:00 PM', is_lunch: false },
+]
+
 function calcWorkHours(inTime, outTime) {
   if (!inTime || !outTime) return 0
   const parse = (t) => {
@@ -53,8 +65,6 @@ export default function EmployeeTodaySheet() {
   const [analyticsMonth, setAnalyticsMonth] = useState(new Date())
   const [monthTasks, setMonthTasks] = useState([])
   const [monthLeaves, setMonthLeaves] = useState([])
-
-  // Undo history stack
   const [undoStack, setUndoStack] = useState([])
 
   const autoSaveInterval = useRef(null)
@@ -65,12 +75,10 @@ export default function EmployeeTodaySheet() {
   const totalWorkHours = calcWorkHours(clockInTime, clockOutTime)
   const isCEO = profile?.role === 'ceo'
 
-  // Push current state to undo stack before making changes
   const pushUndo = useCallback((slots) => {
     setUndoStack((prev) => [...prev.slice(-19), JSON.parse(JSON.stringify(slots))])
   }, [])
 
-  // Ctrl+Z handler
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !submitted) {
@@ -115,15 +123,28 @@ export default function EmployeeTodaySheet() {
     }
   }, [])
 
-  // ─── DAILY RESET: check if slots were last updated on a previous day ───
-  const checkAndResetSlots = async (slotsData, taskData) => {
+  // ─── DAILY RESET: resets both content AND slot timings to default ───
+  const checkAndResetSlots = async (slotsData) => {
     const lastDate = localStorage.getItem(`axis_slots_date_${profile.id}`)
     if (lastDate && lastDate !== today) {
-      // Reset task content for today but keep slot structure
-      const resetSlots = slotsData.map((us) => ({
-        slot_index: us.slot_index,
-        time_slot: us.time_slot,
-        is_lunch: us.is_lunch || false,
+      // Reset slot timings to default AND clear content
+      const defaultTimings = DEFAULT_SLOTS
+      // Update DB slots back to default timings
+      for (let i = 0; i < slotsData.length; i++) {
+        const defaultSlot = defaultTimings[i] || defaultTimings[defaultTimings.length - 1]
+        if (slotsData[i]?.id) {
+          await supabase.from('user_slots').update({
+            time_slot: defaultTimings[i]?.time_slot || slotsData[i].time_slot,
+            is_lunch: false,
+          }).eq('id', slotsData[i].id)
+        }
+      }
+      // Return reset slots with default timings and empty content
+      const resetSlots = slotsData.map((us, i) => ({
+        ...us,
+        slot_index: i,
+        time_slot: defaultTimings[i]?.time_slot || us.time_slot,
+        is_lunch: false,
         tasks_worked_on: '',
         days_agenda: '',
         task_pending: '',
@@ -149,7 +170,6 @@ export default function EmployeeTodaySheet() {
       setStatus(taskData.status)
     }
 
-    // Auto-create daily task for CEO if none exists
     if (!taskData && isCEO) {
       const { data: newTask } = await supabase.from('daily_tasks').insert({
         user_id: profile.id, date: today, status: 'draft',
@@ -158,25 +178,14 @@ export default function EmployeeTodaySheet() {
       if (newTask) setDailyTaskId(newTask.id)
     }
 
-    // Auto-create default slots if none exist
-    if (slotsData.length === 0 && isCEO) {
-      const defaultSlots = [
-        { user_id: profile.id, slot_index: 0, time_slot: '10:00 AM – 11:00 AM', is_lunch: false },
-        { user_id: profile.id, slot_index: 1, time_slot: '11:00 AM – 12:00 PM', is_lunch: false },
-        { user_id: profile.id, slot_index: 2, time_slot: '12:00 PM – 01:00 PM', is_lunch: false },
-        { user_id: profile.id, slot_index: 3, time_slot: '01:00 PM – 02:00 PM', is_lunch: false },
-        { user_id: profile.id, slot_index: 4, time_slot: '02:00 PM – 03:00 PM', is_lunch: false },
-        { user_id: profile.id, slot_index: 5, time_slot: '03:00 PM – 04:00 PM', is_lunch: false },
-        { user_id: profile.id, slot_index: 6, time_slot: '04:00 PM – 05:00 PM', is_lunch: false },
-        { user_id: profile.id, slot_index: 7, time_slot: '05:00 PM – 06:00 PM', is_lunch: false },
-      ]
-      const { data: newSlots } = await supabase.from('user_slots').insert(defaultSlots).select()
-      if (newSlots) {
-        slotsData = newSlots
-        setUserSlots(newSlots)
-        setTodaySlots(newSlots.map((s) => ({
-          slot_index: s.slot_index, time_slot: s.time_slot, is_lunch: false,
-          tasks_worked_on: '', days_agenda: '', task_pending: '',
+    if (slotsData.length === 0) {
+      const newSlots = DEFAULT_SLOTS.map((s) => ({ ...s, user_id: profile.id }))
+      const { data: createdSlots } = await supabase.from('user_slots').insert(newSlots).select()
+      if (createdSlots) {
+        slotsData = createdSlots
+        setUserSlots(createdSlots)
+        setTodaySlots(createdSlots.map((s) => ({
+          ...s, tasks_worked_on: '', days_agenda: '', task_pending: '',
         })))
         localStorage.setItem(`axis_slots_date_${profile.id}`, today)
         await loadWeeklyHours()
@@ -188,16 +197,16 @@ export default function EmployeeTodaySheet() {
     setUserSlots(slotsData)
 
     // Check daily reset
-    const resetSlots = await checkAndResetSlots(slotsData, taskData)
+    const resetSlots = await checkAndResetSlots(slotsData)
     if (resetSlots) {
+      setUserSlots(resetSlots)
       setTodaySlots(resetSlots)
       showToast('Slots reset for today 🌅')
     } else {
       setTodaySlots(slotsData.map((us) => {
         const found = taskData?.task_slots?.find((ts) => ts.slot_index === us.slot_index)
         return {
-          slot_index: us.slot_index,
-          time_slot: us.time_slot,
+          ...us,
           is_lunch: us.is_lunch || false,
           tasks_worked_on: found?.tasks_worked_on || '',
           days_agenda: found?.days_agenda || '',
@@ -283,7 +292,7 @@ export default function EmployeeTodaySheet() {
     const { data, error } = await supabase.from('user_slots').insert({ user_id: profile.id, slot_index: newIndex, time_slot: timeStr, is_lunch: false }).select().single()
     if (error) { showToast('Failed to add slot', 'error'); return }
     setUserSlots([...userSlots, data])
-    setTodaySlots([...todaySlots, { slot_index: newIndex, time_slot: timeStr, is_lunch: false, tasks_worked_on: '', days_agenda: '', task_pending: '' }])
+    setTodaySlots([...todaySlots, { ...data, tasks_worked_on: '', days_agenda: '', task_pending: '' }])
     showToast('Slot added')
   }
 
@@ -296,7 +305,6 @@ export default function EmployeeTodaySheet() {
     if (dailyTaskId) await supabase.from('task_slots').delete().eq('daily_task_id', dailyTaskId).eq('slot_index', slot.slot_index)
   }
 
-  // ─── REORDER SLOTS (drag) ───
   const handleReorderSlots = async (reordered) => {
     pushUndo(todaySlots)
     const updated = reordered.map((s, idx) => ({ ...s, slot_index: idx }))
@@ -307,17 +315,15 @@ export default function EmployeeTodaySheet() {
       return updated.map((s, idx) => {
         const old = reordered[idx]
         const content = contentMap[old.slot_index] || {}
-        return { slot_index: idx, time_slot: s.time_slot, is_lunch: s.is_lunch || false, tasks_worked_on: content.tasks_worked_on || '', days_agenda: content.days_agenda || '', task_pending: content.task_pending || '' }
+        return { ...s, slot_index: idx, tasks_worked_on: content.tasks_worked_on || '', days_agenda: content.days_agenda || '', task_pending: content.task_pending || '' }
       })
     })
-    // Persist new order to DB
     for (const s of updated) {
       if (s.id) await supabase.from('user_slots').update({ slot_index: s.slot_index }).eq('id', s.id)
     }
     showToast('Slots reordered')
   }
 
-  // ─── TOGGLE LUNCH ───
   const handleToggleLunch = async (slot) => {
     if (!slot.id) return
     const newVal = !slot.is_lunch
@@ -327,7 +333,6 @@ export default function EmployeeTodaySheet() {
     showToast(newVal ? '☕ Marked as lunch break' : 'Lunch break removed')
   }
 
-  // ─── EDIT SLOT TIME ───
   const handleEditSlotTime = async (slot, newTimeStr) => {
     if (!slot.id) return
     pushUndo(todaySlots)
@@ -341,6 +346,7 @@ export default function EmployeeTodaySheet() {
     if (!todaySlots.some((s) => s.tasks_worked_on?.trim())) { showToast('Please fill at least one time slot', 'error'); return }
     setSubmitting(true)
     await autosave(todaySlots)
+    // Use raw clock time (clock out - clock in) as total hours
     const totalHours = totalWorkHours || calculateHours(todaySlots)
     const { error } = await supabase.from('daily_tasks').update({
       status: 'submitted', submitted_at: new Date().toISOString(),
@@ -758,7 +764,7 @@ export default function EmployeeTodaySheet() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="space-y-3">
-                  {attendanceDonut.map((d, i) => (
+                    {attendanceDonut.map((d, i) => (
                       <div key={i}>
                         <div className="flex items-center gap-3">
                           <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: d.color }} />
@@ -780,6 +786,13 @@ export default function EmployeeTodaySheet() {
                         )}
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Spectate Modal */}
       {spectateUser && (
