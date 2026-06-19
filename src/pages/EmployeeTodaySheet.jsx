@@ -332,6 +332,24 @@ export default function EmployeeTodaySheet() {
     setTodaySlots(todaySlots.map((s) => s.slot_index === slot.slot_index ? { ...s, is_lunch: newVal } : s))
     showToast(newVal ? '☕ Marked as lunch break' : 'Lunch break removed')
   }
+  const handleApplyTemplate = async (template) => {
+  // Delete all existing slots
+  for (const s of userSlots) {
+    if (s.id) await supabase.from('user_slots').delete().eq('id', s.id)
+  }
+  // Insert template slots
+  const newSlots = template.map((s, idx) => ({
+    user_id: profile.id, slot_index: idx, time_slot: s.time_slot, is_lunch: s.is_lunch,
+  }))
+  const { data } = await supabase.from('user_slots').insert(newSlots).select()
+  if (data) {
+    setUserSlots(data)
+    setTodaySlots(data.map((s) => ({
+      ...s, tasks_worked_on: '', days_agenda: '', task_pending: '',
+    })))
+    showToast('Template applied ✅')
+  }
+}
 
   const handleEditSlotTime = async (slot, newTimeStr) => {
     if (!slot.id) return
@@ -823,7 +841,8 @@ export default function EmployeeTodaySheet() {
           onRemoveSlot={handleRemoveSlot}
           onReorderSlots={handleReorderSlots}
           onToggleLunch={handleToggleLunch}
-          onEditSlotTime={handleEditSlotTime}
+        onEditSlotTime={handleEditSlotTime}
+        onApplyTemplate={handleApplyTemplate}
           onClose={() => setShowSlotsModal(false)}
         />
       )}
