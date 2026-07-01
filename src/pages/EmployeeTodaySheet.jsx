@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import {
-  Send, Settings, Trash2, CheckCircle2, Clock, Timer, TrendingUp, ListTodo, Undo2, Eye, ChevronRight, ChevronDown, BarChart3, Coffee,
+  Send, Settings, Trash2, CheckCircle2, Clock, Timer, TrendingUp, ListTodo, Undo2, Eye, ChevronRight, ChevronDown, BarChart3, Coffee, Merge,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { todayISO, formatDateLong, calculateHours, getWeekMonday } from '../lib/helpers'
@@ -15,7 +15,6 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts'
 
-// Default slots structure starting from 10 AM
 const DEFAULT_SLOTS = [
   { slot_index: 0, time_slot: '10:00 AM – 11:00 AM', is_lunch: false },
   { slot_index: 1, time_slot: '11:00 AM – 12:00 PM', is_lunch: false },
@@ -66,6 +65,8 @@ export default function EmployeeTodaySheet() {
   const [monthTasks, setMonthTasks] = useState([])
   const [monthLeaves, setMonthLeaves] = useState([])
   const [undoStack, setUndoStack] = useState([])
+  const [selectedSlots, setSelectedSlots] = useState([]) // for merge
+  const [mergeMode, setMergeMode] = useState(false)
 
   const autoSaveInterval = useRef(null)
   const spectateTimer = useRef(null)
@@ -123,27 +124,21 @@ export default function EmployeeTodaySheet() {
     }
   }, [])
 
-  // ─── DAILY RESET: resets both content AND slot timings to default ───
   const checkAndResetSlots = async (slotsData) => {
     const lastDate = localStorage.getItem(`axis_slots_date_${profile.id}`)
     if (lastDate && lastDate !== today) {
-      // Reset slot timings to default AND clear content
-      const defaultTimings = DEFAULT_SLOTS
-      // Update DB slots back to default timings
       for (let i = 0; i < slotsData.length; i++) {
-        const defaultSlot = defaultTimings[i] || defaultTimings[defaultTimings.length - 1]
         if (slotsData[i]?.id) {
           await supabase.from('user_slots').update({
-            time_slot: defaultTimings[i]?.time_slot || slotsData[i].time_slot,
+            time_slot: DEFAULT_SLOTS[i]?.time_slot || slotsData[i].time_slot,
             is_lunch: false,
           }).eq('id', slotsData[i].id)
         }
       }
-      // Return reset slots with default timings and empty content
       const resetSlots = slotsData.map((us, i) => ({
         ...us,
         slot_index: i,
-        time_slot: defaultTimings[i]?.time_slot || us.time_slot,
+        time_slot: DEFAULT_SLOTS[i]?.time_slot || us.time_slot,
         is_lunch: false,
         tasks_worked_on: '',
         days_agenda: '',
@@ -184,9 +179,7 @@ export default function EmployeeTodaySheet() {
       if (createdSlots) {
         slotsData = createdSlots
         setUserSlots(createdSlots)
-        setTodaySlots(createdSlots.map((s) => ({
-          ...s, tasks_worked_on: '', days_agenda: '', task_pending: '',
-        })))
+        setTodaySlots(createdSlots.map((s) => ({ ...s, tasks_worked_on: '', days_agenda: '', task_pending: '' })))
         localStorage.setItem(`axis_slots_date_${profile.id}`, today)
         await loadWeeklyHours()
         setLoading(false)
@@ -194,9 +187,31 @@ export default function EmployeeTodaySheet() {
       }
     }
 
+    // Auto-adjust first slot for Shivanesh if clocked in early
+    const SHIVANESH_ID = 'b3479958-4cd0-4b85-a581-a7d78352f168'
+    if (profile.id === SHIVANESH_ID && clockInTime) {
+      const parseTime = (t) => {
+        const match = t.match(/(\d+):(\d+)\s*(am|pm)/i)
+        if (!match) return null
+        let h = parseInt(match[1]), m = parseInt(match[2])
+        const p = match[3].toLowerCase()
+        if (p === 'pm' && h !== 12) h += 12
+        if (p === 'am' && h === 12) h = 0
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+      }
+      const clockIn24 = parseTime(clockInTime)
+      if (clockIn24 && clockIn24 < '10:00') {
+        const firstSlot = slotsData[0]
+        if (firstSlot?.id) {
+          const newTime = `${clockInTime} – 11:00 AM`
+          await supabase.from('user_slots').update({ time_slot: newTime }).eq('id', firstSlot.id)
+          slotsData[0] = { ...firstSlot, time_slot: newTime }
+        }
+      }
+    }
+
     setUserSlots(slotsData)
 
-    // Check daily reset
     const resetSlots = await checkAndResetSlots(slotsData)
     if (resetSlots) {
       setUserSlots(resetSlots)
@@ -332,24 +347,19 @@ export default function EmployeeTodaySheet() {
     setTodaySlots(todaySlots.map((s) => s.slot_index === slot.slot_index ? { ...s, is_lunch: newVal } : s))
     showToast(newVal ? '☕ Marked as lunch break' : 'Lunch break removed')
   }
+
   const handleApplyTemplate = async (template) => {
-  // Delete all existing slots
-  for (const s of userSlots) {
-    if (s.id) await supabase.from('user_slots').delete().eq('id', s.id)
+    for (const s of userSlots) {
+      if (s.id) await supabase.from('user_slots').delete().eq('id', s.id)
+    }
+    const newSlots = template.map((s, idx) => ({ user_id: profile.id, slot_index: idx, time_slot: s.time_slot, is_lunch: s.is_lunch }))
+    const { data } = await supabase.from('user_slots').insert(newSlots).select()
+    if (data) {
+      setUserSlots(data)
+      setTodaySlots(data.map((s) => ({ ...s, tasks_worked_on: '', days_agenda: '', task_pending: '' })))
+      showToast('Template applied ✅')
+    }
   }
-  // Insert template slots
-  const newSlots = template.map((s, idx) => ({
-    user_id: profile.id, slot_index: idx, time_slot: s.time_slot, is_lunch: s.is_lunch,
-  }))
-  const { data } = await supabase.from('user_slots').insert(newSlots).select()
-  if (data) {
-    setUserSlots(data)
-    setTodaySlots(data.map((s) => ({
-      ...s, tasks_worked_on: '', days_agenda: '', task_pending: '',
-    })))
-    showToast('Template applied ✅')
-  }
-}
 
   const handleEditSlotTime = async (slot, newTimeStr) => {
     if (!slot.id) return
@@ -360,12 +370,94 @@ export default function EmployeeTodaySheet() {
     showToast('Time updated')
   }
 
+  // ─── MERGE SLOTS ───
+  const toggleSlotSelection = (slotIndex) => {
+    setSelectedSlots((prev) =>
+      prev.includes(slotIndex) ? prev.filter((i) => i !== slotIndex) : [...prev, slotIndex]
+    )
+  }
+
+  const handleMergeSlots = async () => {
+    if (selectedSlots.length < 2) { showToast('Select at least 2 slots to merge', 'error'); return }
+    pushUndo(todaySlots)
+
+    // Sort selected by slot_index
+    const sortedSelected = [...selectedSlots].sort((a, b) => a - b)
+    const selectedSlotsData = sortedSelected.map((idx) => todaySlots.find((s) => s.slot_index === idx)).filter(Boolean)
+
+    // Get first and last time
+    const firstSlot = selectedSlotsData[0]
+    const lastSlot = selectedSlotsData[selectedSlotsData.length - 1]
+    const fromTime = firstSlot.time_slot.split(' – ')[0]
+    const toTime = lastSlot.time_slot.split(' – ')[1]
+    const mergedTimeSlot = `${fromTime} – ${toTime}`
+
+    // Combine all content
+    const mergedContent = {
+      tasks_worked_on: selectedSlotsData.map((s) => s.tasks_worked_on).filter(Boolean).join('\n'),
+      days_agenda: selectedSlotsData.map((s) => s.days_agenda).filter(Boolean).join('\n'),
+      task_pending: selectedSlotsData.map((s) => s.task_pending).filter(Boolean).join('\n'),
+    }
+
+    // Keep first slot with merged time and content, remove the rest
+    const firstUserSlot = userSlots.find((s) => s.slot_index === firstSlot.slot_index)
+    if (firstUserSlot?.id) {
+      await supabase.from('user_slots').update({ time_slot: mergedTimeSlot }).eq('id', firstUserSlot.id)
+    }
+
+    // Delete other selected user_slots from DB
+    for (let i = 1; i < sortedSelected.length; i++) {
+      const us = userSlots.find((s) => s.slot_index === sortedSelected[i])
+      if (us?.id) {
+        await supabase.from('user_slots').delete().eq('id', us.id)
+        if (dailyTaskId) await supabase.from('task_slots').delete().eq('daily_task_id', dailyTaskId).eq('slot_index', us.slot_index)
+      }
+    }
+
+    // Update state — remove selected slots except first, update first with merged data
+    const newUserSlots = userSlots
+      .filter((s) => !sortedSelected.slice(1).includes(s.slot_index))
+      .map((s) => s.slot_index === firstSlot.slot_index ? { ...s, time_slot: mergedTimeSlot } : s)
+      .map((s, idx) => ({ ...s, slot_index: idx }))
+
+    const newTodaySlots = todaySlots
+      .filter((s) => !sortedSelected.slice(1).includes(s.slot_index))
+      .map((s) => s.slot_index === firstSlot.slot_index ? { ...s, time_slot: mergedTimeSlot, ...mergedContent } : s)
+      .map((s, idx) => ({ ...s, slot_index: idx }))
+
+    // Reindex in DB
+    for (const s of newUserSlots) {
+      if (s.id) await supabase.from('user_slots').update({ slot_index: s.slot_index }).eq('id', s.id)
+    }
+
+    setUserSlots(newUserSlots)
+    setTodaySlots(newTodaySlots)
+    setSelectedSlots([])
+    setMergeMode(false)
+    showToast('Slots merged ✅')
+  }
+
   const handleSubmit = async () => {
     if (!todaySlots.some((s) => s.tasks_worked_on?.trim())) { showToast('Please fill at least one time slot', 'error'); return }
     setSubmitting(true)
     await autosave(todaySlots)
-    // Use raw clock time (clock out - clock in) as total hours
-    const totalHours = totalWorkHours || calculateHours(todaySlots)
+    let totalHours = totalWorkHours || calculateHours(todaySlots)
+    // Add saved lunch time bonus (official lunch = 1hr)
+    const lunchSlot = todaySlots.find((s) => s.is_lunch)
+    if (lunchSlot && totalWorkHours > 0) {
+      const match = lunchSlot.time_slot.match(/(\d+):(\d+)\s*(AM|PM).*?(\d+):(\d+)\s*(AM|PM)/i)
+      if (match) {
+        let [, h1, m1, p1, h2, m2, p2] = match
+        h1 = parseInt(h1); m1 = parseInt(m1); h2 = parseInt(h2); m2 = parseInt(m2)
+        if (p1.toUpperCase() === 'PM' && h1 !== 12) h1 += 12
+        if (p1.toUpperCase() === 'AM' && h1 === 12) h1 = 0
+        if (p2.toUpperCase() === 'PM' && h2 !== 12) h2 += 12
+        if (p2.toUpperCase() === 'AM' && h2 === 12) h2 = 0
+        const lunchMins = (h2 * 60 + m2) - (h1 * 60 + m1)
+        const savedMins = 60 - lunchMins
+        if (savedMins > 0) totalHours = (parseFloat(totalHours) + savedMins / 60).toFixed(1)
+      }
+    }
     const { error } = await supabase.from('daily_tasks').update({
       status: 'submitted', submitted_at: new Date().toISOString(),
       logoff_time: clockOutTime || null, total_hours: totalHours,
@@ -538,9 +630,34 @@ export default function EmployeeTodaySheet() {
                 <div className="flex items-center justify-between">
                   <span>Tasks worked on</span>
                   {!submitted && (
-                    <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-md flex items-center gap-1 font-medium transition-colors text-white/60">
-                      <Settings className="w-3 h-3" strokeWidth={2} />Slots
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {mergeMode ? (
+                        <>
+                          <button
+                            onClick={handleMergeSlots}
+                            disabled={selectedSlots.length < 2}
+                            className="text-[10px] uppercase tracking-wider bg-[#C5F542] disabled:opacity-40 text-black px-2.5 py-1 rounded-md flex items-center gap-1 font-semibold transition-colors"
+                          >
+                            Merge {selectedSlots.length > 0 ? `(${selectedSlots.length})` : ''}
+                          </button>
+                          <button
+                            onClick={() => { setMergeMode(false); setSelectedSlots([]) }}
+                            className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-md font-medium transition-colors text-white/60"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => setMergeMode(true)} className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-md flex items-center gap-1 font-medium transition-colors text-white/60">
+                            <Merge className="w-3 h-3" strokeWidth={2} />Merge
+                          </button>
+                          <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-md flex items-center gap-1 font-medium transition-colors text-white/60">
+                            <Settings className="w-3 h-3" strokeWidth={2} />Slots
+                          </button>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               </th>
@@ -549,47 +666,58 @@ export default function EmployeeTodaySheet() {
             </tr>
           </thead>
           <tbody>
-            {todaySlots.map((slot, idx) => (
-              <tr key={slot.slot_index} className={`group ${slot.is_lunch ? 'bg-amber-50' : idx % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}>
-                <td className="border-r border-black/[0.06] align-top p-0">
-                  <div className="px-3 py-1.5 bg-black/[0.04] border-b border-black/[0.06] flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
-                      {slot.is_lunch && (
-                        <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
-                          <Coffee className="w-2.5 h-2.5" /> Lunch
-                        </span>
+            {todaySlots.map((slot, idx) => {
+              const isSelected = selectedSlots.includes(slot.slot_index)
+              return (
+                <tr key={slot.slot_index} className={`group transition-colors ${isSelected ? 'bg-[#C5F542]/10' : slot.is_lunch ? 'bg-amber-50' : idx % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}>
+                  <td className="border-r border-black/[0.06] align-top p-0">
+                    <div className="px-3 py-1.5 bg-black/[0.04] border-b border-black/[0.06] flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {mergeMode && !submitted && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSlotSelection(slot.slot_index)}
+                            className="w-3.5 h-3.5 accent-black cursor-pointer flex-shrink-0"
+                          />
+                        )}
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-black/40">{slot.time_slot}</span>
+                        {slot.is_lunch && (
+                          <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
+                            <Coffee className="w-2.5 h-2.5" /> Lunch
+                          </span>
+                        )}
+                      </div>
+                      {!submitted && !mergeMode && todaySlots.length > 1 && (
+                        <button onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))} className="opacity-0 group-hover:opacity-100 text-black/20 hover:text-red-500 transition-all">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       )}
                     </div>
-                    {!submitted && todaySlots.length > 1 && (
-                      <button onClick={() => handleRemoveSlot(userSlots.find((s) => s.slot_index === slot.slot_index))} className="opacity-0 group-hover:opacity-100 text-black/20 hover:text-red-500 transition-all">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                    <div className="relative">
+                      {slot.tasks_worked_on?.trim() && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#C5F542]" />}
+                      {slot.is_lunch ? (
+                        <div className="px-3 py-4 text-sm text-amber-400 italic flex items-center gap-2">
+                          <Coffee className="w-4 h-4" /> Lunch Break
+                        </div>
+                      ) : (
+                        <textarea disabled={submitted} value={slot.tasks_worked_on} onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[70px]" placeholder="What did you work on?" />
+                      )}
+                    </div>
+                  </td>
+                  <td className="border-r border-black/[0.06] align-top p-0">
+                    {slot.is_lunch ? <div className="min-h-[96px]" /> : (
+                      <textarea disabled={submitted} value={slot.days_agenda} onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
                     )}
-                  </div>
-                  <div className="relative">
-                    {slot.tasks_worked_on?.trim() && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#C5F542]" />}
-                    {slot.is_lunch ? (
-                      <div className="px-3 py-4 text-sm text-amber-400 italic flex items-center gap-2">
-                        <Coffee className="w-4 h-4" /> Lunch Break
-                      </div>
-                    ) : (
-                      <textarea disabled={submitted} value={slot.tasks_worked_on} onChange={(e) => updateSlot(slot.slot_index, 'tasks_worked_on', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[70px]" placeholder="What did you work on?" />
+                  </td>
+                  <td className="align-top p-0">
+                    {slot.is_lunch ? <div className="min-h-[96px]" /> : (
+                      <textarea disabled={submitted} value={slot.task_pending} onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
                     )}
-                  </div>
-                </td>
-                <td className="border-r border-black/[0.06] align-top p-0">
-                  {slot.is_lunch ? <div className="min-h-[96px]" /> : (
-                    <textarea disabled={submitted} value={slot.days_agenda} onChange={(e) => updateSlot(slot.slot_index, 'days_agenda', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
-                  )}
-                </td>
-                <td className="align-top p-0">
-                  {slot.is_lunch ? <div className="min-h-[96px]" /> : (
-                    <textarea disabled={submitted} value={slot.task_pending} onChange={(e) => updateSlot(slot.slot_index, 'task_pending', e.target.value)} className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none focus:bg-white disabled:text-black resize-none transition-colors min-h-[96px]" placeholder="—" />
-                  )}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -605,7 +733,7 @@ export default function EmployeeTodaySheet() {
           ))}
         </div>
         {mobileTab === 'tasks' && !submitted && (
-          <div className="flex justify-end p-2 bg-black/[0.03] border-x border-black/[0.06]">
+          <div className="flex justify-end gap-2 p-2 bg-black/[0.03] border-x border-black/[0.06]">
             <button onClick={() => setShowSlotsModal(true)} className="text-[10px] uppercase tracking-wider bg-black/10 px-2 py-1 rounded flex items-center gap-1">
               <Settings className="w-3 h-3" strokeWidth={2} />Slots
             </button>
@@ -695,7 +823,6 @@ export default function EmployeeTodaySheet() {
                 <button onClick={() => setAnalyticsMonth(new Date(aYear, aMonth + 1))} className="p-2 rounded-lg border border-black/[0.06] hover:bg-black/5 transition-colors"><ChevronRight className="w-4 h-4" strokeWidth={2} /></button>
               </div>
             </div>
-
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
               <div className="bg-black rounded-xl p-4 relative overflow-hidden shadow-lg">
                 <div className="absolute inset-0 opacity-10" style={{ background: 'radial-gradient(circle at top right, #C5F542 0%, transparent 60%)' }} />
@@ -719,7 +846,6 @@ export default function EmployeeTodaySheet() {
                 <div className="text-2xl sm:text-3xl font-bold">{daysSubmitted > 0 ? Math.round((totalMonthHours / daysSubmitted) * 10) / 10 : 0}h</div>
               </div>
             </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <div className="bg-white rounded-xl shadow-sm border border-black/[0.06] p-5">
                 <h4 className="text-xs uppercase tracking-widest font-semibold text-black/40 mb-4">Daily hours</h4>
@@ -766,7 +892,6 @@ export default function EmployeeTodaySheet() {
                 )}
               </div>
             </div>
-
             <div className="bg-white rounded-xl shadow-sm border border-black/[0.06] p-5">
               <h4 className="text-xs uppercase tracking-widest font-semibold text-black/40 mb-4">Attendance</h4>
               {attendanceDonut.length === 0 ? (
@@ -841,8 +966,8 @@ export default function EmployeeTodaySheet() {
           onRemoveSlot={handleRemoveSlot}
           onReorderSlots={handleReorderSlots}
           onToggleLunch={handleToggleLunch}
-        onEditSlotTime={handleEditSlotTime}
-        onApplyTemplate={handleApplyTemplate}
+          onEditSlotTime={handleEditSlotTime}
+          onApplyTemplate={handleApplyTemplate}
           onClose={() => setShowSlotsModal(false)}
         />
       )}
